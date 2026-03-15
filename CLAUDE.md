@@ -8,8 +8,9 @@ A PhpStorm plugin that acts as an MCP (Model Context Protocol) server, exposing 
 
 ```
 phpstorm-mcp/
-├── src/main/kotlin/com/github/brannow/phpstormmcp/   # Plugin source (Kotlin)
-├── src/main/resources/META-INF/plugin.xml             # Plugin configuration
+├── src/main/kotlin/com/github/brannow/phpstormmcp/     # Plugin source (Kotlin)
+├── src/main/resources/META-INF/plugin.xml              # Plugin configuration
+├── roadmap.md                                          # Project Roadmap (todo list)
 ├── build.gradle.kts                                    # Gradle build (IntelliJ Platform Gradle Plugin 2.x)
 ├── gradle.properties                                   # Platform target: PhpStorm 2025.3
 ├── internal/                                           # Documentation & reference (not shipped with plugin)
@@ -29,17 +30,18 @@ phpstorm-mcp/
 
 ## Key Documentation
 
-| Need to understand... | Read this |
-|---|---|
-| Documentation overview & navigation | `internal/INDEX.md` |
-| XDebugger API (our core integration) | `internal/docs/03-debugger-api/_INDEX.md` |
-| MCP SDK (how we expose tools) | `internal/docs/04-mcp-sdk/_INDEX.md` |
-| Tool design & specifications | `internal/tools/ToolDesign.md` |
-| Tool design philosophy | `internal/tools/Tools.md` |
-| Plugin structure (plugin.xml, services) | `internal/docs/02-plugin-structure/_INDEX.md` |
-| Editor/PSI APIs (reading code context) | `internal/docs/05-editor-and-psi/_INDEX.md` |
-| Debugger action IDs | `internal/docs/03-debugger-api/debugger-action-ids.md` |
-| API quick reference (all key classes) | `internal/docs/03-debugger-api/api-quick-reference.md` |
+| Need to understand...                                 | Read this                                              |
+|-------------------------------------------------------|--------------------------------------------------------|
+| Documentation overview & navigation                   | `internal/INDEX.md`                                    |
+| Project Roadmap (todo list) and what we already build | `roadmap.md`                                           |
+| XDebugger API (our core integration)                  | `internal/docs/03-debugger-api/_INDEX.md`              |
+| MCP SDK (how we expose tools)                         | `internal/docs/04-mcp-sdk/_INDEX.md`                   |
+| Tool design & specifications                          | `internal/tools/ToolDesign.md`                         |
+| Tool design philosophy                                | `internal/tools/Tools.md`                              |
+| Plugin structure (plugin.xml, services)               | `internal/docs/02-plugin-structure/_INDEX.md`          |
+| Editor/PSI APIs (reading code context)                | `internal/docs/05-editor-and-psi/_INDEX.md`            |
+| Debugger action IDs                                   | `internal/docs/03-debugger-api/debugger-action-ids.md` |
+| API quick reference (all key classes)                 | `internal/docs/03-debugger-api/api-quick-reference.md` |
 
 ## Architecture Decisions
 
