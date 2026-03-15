@@ -1,0 +1,128 @@
+# Roadmap
+
+Build incrementally — each milestone is testable on its own before moving to the next.
+
+---
+
+## Milestone 0: Project Foundation ✅
+
+- [x] Project scaffold (Gradle, plugin.xml, Kotlin)
+- [x] Hello World plugin loads in sandboxed PhpStorm
+- [x] Documentation organized with index
+- [x] Tool design spec finalized (16 tools, snapshot concept)
+- [x] Logo, .gitignore, initial commit
+
+---
+
+## Milestone 0.5: Status Bar Widget
+
+Give the human visibility into the MCP server state — a small indicator in PhpStorm's status bar.
+
+- [ ] Status bar widget with plugin icon (grayed out = inactive, colored = active)
+- [ ] Click to open popup with: connection status, server port/transport info
+- [ ] Activity log: lightweight rolling log of recent MCP events ("Client connected", "breakpoint_add called", etc.)
+- [ ] Server start/stop toggle from the widget
+
+**Test**: Plugin loads → icon appears in status bar (grayed out). Server starts → icon lights up. Click icon → see status popup. Later when tools are implemented, verify tool calls appear in the activity log.
+
+---
+
+## Milestone 1: MCP Server Infrastructure
+
+Get a working MCP server running inside the plugin that an external client can connect to.
+
+- [ ] Add Kotlin MCP SDK dependency to build.gradle.kts
+- [ ] Create MCP server service (project-level, starts with project)
+- [ ] Choose transport: stdio or HTTP (evaluate what works best inside a plugin)
+- [ ] Register a single dummy tool (`ping` → returns `pong`) to verify the protocol works
+- [ ] Connect from an external MCP client (e.g. Claude, or a simple test client) and call `ping`
+
+**Test**: MCP client connects → calls `ping` → gets `pong` response.
+
+---
+
+## Milestone 2: Breakpoint Tools
+
+First real tools — breakpoints work without an active debug session, so they're the simplest to test.
+
+- [ ] `breakpoint_list` — read all breakpoints from XBreakpointManager
+- [ ] `breakpoint_add` — add a line breakpoint (file + line)
+- [ ] `breakpoint_add` with condition — conditional breakpoints
+- [ ] `breakpoint_update` — enable/disable, change condition
+- [ ] `breakpoint_remove` — remove single or all breakpoints
+
+**Test**: Use MCP client to add a breakpoint → verify it appears in PhpStorm's gutter. List breakpoints → verify output matches the Breakpoints dialog. Remove it → verify it's gone.
+
+---
+
+## Milestone 3: Session Management
+
+- [ ] `session_list` — list active debug sessions with status and active flag
+- [ ] `session_stop` — stop a specific session or all sessions
+- [ ] Active session detection (which session is currently focused in the UI)
+
+**Test**: Manually start 1-2 debug sessions in PhpStorm. Call `session_list` → verify output matches the debug tabs. Call `session_stop` → verify session ends.
+
+---
+
+## Milestone 4: Debug Snapshot
+
+Build the snapshot response format before adding navigation tools — this is the foundation all other tools return.
+
+- [ ] Snapshot data model (session, position, source, variables, stacktrace)
+- [ ] Source context extraction: scope-aware (detect method boundaries, show method or ±10 lines)
+- [ ] Variable preview generation (scalars → value, objects → class name, arrays → count)
+- [ ] Stacktrace extraction from XSuspendContext
+- [ ] `debug_snapshot` tool — returns full snapshot of current state
+- [ ] `include` parameter — filter snapshot to only requested parts
+
+**Test**: Manually pause at a breakpoint. Call `debug_snapshot` → verify the response matches what you see in the PhpStorm debug panel (same variables, same stack, same code location). Test `include: ["variables"]` returns only variables.
+
+---
+
+## Milestone 5: Navigation / Stepping
+
+Each tool triggers an action and returns a snapshot when the debugger pauses again.
+
+- [ ] `debug_step_over` — step over + return snapshot
+- [ ] `debug_step_into` — step into + return snapshot
+- [ ] `debug_step_out` — step out + return snapshot
+- [ ] `debug_continue` — resume + return snapshot (or session-ended)
+- [ ] `debug_run_to_line` — run to specific line + return snapshot
+- [ ] Async wait pattern: trigger action → listen for pause → return result
+
+**Test**: Pause at a breakpoint. Call `debug_step_over` → verify response shows the next line. Call `debug_step_into` on a function call → verify you're inside the function. Call `debug_continue` → verify you hit the next breakpoint or session ends.
+
+---
+
+## Milestone 6: Deep Inspection
+
+- [ ] `debug_inspect_frame` — switch to a different stack frame, return snapshot at that scope
+- [ ] `debug_variable_detail` — expand nested variables by path (e.g. `$request.headers`)
+- [ ] `debug_evaluate` — evaluate PHP expression in current context
+- [ ] `debug_set_value` — modify a variable at runtime
+
+**Test**: Pause at a breakpoint. Call `debug_inspect_frame(2)` → verify variables match that frame's scope. Call `debug_variable_detail("$request")` → verify children match the Variables panel. Call `debug_evaluate("count($items)")` → verify result. Call `debug_set_value("$count", "99")` → verify variable changed in PhpStorm.
+
+---
+
+## Milestone 7: Integration & Polish
+
+- [ ] Error handling: graceful responses for no session, session running (not paused), invalid paths
+- [ ] Timeout handling for navigation tools (what if `debug_continue` never hits a breakpoint?)
+- [ ] Multi-session: verify all tools work correctly with 2+ concurrent sessions
+- [ ] Edge cases: very large stack traces, deeply nested objects, long string values
+- [ ] Performance: snapshot generation should be fast, variable expansion should be lazy
+
+---
+
+## Future (Post-v1)
+
+Not in scope now, but where this goes:
+
+- Exception breakpoints
+- Watch expressions (persistent across steps)
+- Start/restart debug sessions from agent
+- Mute/unmute all breakpoints
+- Smart step into (choose which function to enter)
+- **Beyond debugging**: refactoring tools (rename, extract method), code navigation (find usages, go to definition), run configurations, test runner integration
