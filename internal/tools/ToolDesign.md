@@ -13,6 +13,122 @@ The agent should not need internal API/system knowledge to use a tool. Think of 
 
 **Key decision**: Every tool that changes or inspects debug state returns a **Debug Snapshot** — a rich, standardized response that gives the agent the same context a human gets by looking at the debug panel.
 
+---
+
+## Tool Output Design
+
+Tools communicate with the agent in **natural language**, not JSON. The goal: every response leaves the agent fully oriented — no follow-up "what just happened?" calls needed.
+
+### Why not JSON?
+
+The agent isn't a REST client. It reads context like a human reads a debug panel. Natural language output means the agent can immediately reason about the result without parsing structure. It also lets us embed guidance naturally (e.g., "use #ID to target a specific one") that would be awkward in JSON.
+
+### Shared response pattern
+
+Every tool response follows the same three-part structure. The structure is predictable, the language is natural.
+
+```
+┌─ Result       Just the data. Single item = one line. Multiple = header + lines.
+│               No narration ("Breakpoint added:" is noise — the agent knows what it called).
+│
+├─ Context      (optional) Blank line separator. Extra info the agent needs.
+│               Only present when there's something non-obvious to communicate.
+│
+└─ Error        What went wrong + current state + what to do next.
+                The agent should never need a follow-up call to orient itself.
+```
+
+### Core principles
+
+**1. Self-contained responses** — Every response includes enough context for the agent to decide its next action without extra tool calls. A bad tool response causes 3-5 follow-up calls (list, inspect, retry). A good one causes zero.
+
+- Error: not found → show what *does* exist (the full list), so the agent can self-correct
+- Error: ambiguous → list the options with their IDs and tell the agent how to resolve it
+- Error: empty state → say clearly "No breakpoints in project found", not a generic error
+- Success with edge case → proactively include the context the agent will need next
+
+**2. Consistent notation across all tools** — Each domain has one canonical format:
+
+| Domain      | Format                                           | Example                                                    |
+|-------------|--------------------------------------------------|------------------------------------------------------------|
+| Breakpoint  | `#ID file:line (annotations)`                    | `#3 src/WorldClass.php:13 (disabled, condition: $foo === '')` |
+| Session     | `#ID "name" [status] at file:line (active)`      | `#12345 "index.php" [paused] at src/index.php:15 (active)` |
+
+Annotations are parenthetical, comma-separated. Only non-default state is shown (enabled + suspend are defaults, so only `disabled` and `no suspend` appear).
+
+**3. Input format matches output format** — If the output says `src/index.php:15`, the input accepts `src/index.php:15`. The agent can use output from one tool as input to another without reformatting. No separate file/line parameters when a single `location` is more natural.
+
+**4. Guide, don't dump** — When the agent hits an edge case (like multiple breakpoints on one line), don't just list data — tell it what to do: "Choose a breakpoint via #ID or remove other breakpoints first."
+
+### Response examples
+
+These examples show the shared pattern applied across different tools and scenarios.
+
+**Success — single item (add, update, stop):**
+```
+#4 src/WorldClass.php:13
+```
+
+**Success — list (list, remove):**
+```
+#2 src/index.php:5
+src/WorldClass.php:13
+ - #3 (condition: $foo === '')
+ - #5 (disabled)
+```
+
+**Success + context (add with existing breakpoint on same line):**
+```
+#6 src/WorldClass.php:13
+
+src/WorldClass.php:13 also has other breakpoints:
+ - #3 (condition: $foo === '')
+ - #4
+ - #5 (disabled)
+```
+
+**Success — remove with remaining:**
+```
+#3 src/WorldClass.php:13 (condition: $foo === '')
+#4 src/WorldClass.php:13
+
+2 breakpoint(s) remaining in project
+```
+
+**Error: ambiguous — tree format + guidance:**
+```
+src/WorldClass.php:13
+ - #3 (condition: $foo === '')
+ - #4
+ - #5 (disabled)
+ - #6
+
+Choose a breakpoint via #ID or remove other breakpoints first.
+```
+
+**Error: not found — narrowed to matching breakpoints first:**
+```
+Breakpoint 'NonUsedClass' not found, matching breakpoints are:
+
+#7 src/NonUsedClass.php:9
+#8 src/NonUsedClass.php:8
+#10 src/NonUsedClass.php:5 (method)
+```
+Falls back to full project list if no substring matches.
+
+**Error: empty state — one-liner, no ambiguity:**
+```
+No breakpoints in project found
+```
+
+**Session — same pattern:**
+```
+#12345 "index.php" [paused] at src/index.php:15 (active)
+#12346 "test.php" [running]
+```
+
+---
+
 ## Core Concept: Debug Snapshot
 
 The snapshot is not a tool itself — it's the **standard response format** returned by most tools. It mirrors what a human sees when paused at a breakpoint:
@@ -47,11 +163,30 @@ Session + position are always included (minimal overhead, always needed).
 These work independently of debug sessions — breakpoints exist in the project regardless of whether debugging is active.
 
 #### `breakpoint_list`
-List all breakpoints in the project.
+List all breakpoints in the project. Same-line breakpoints are auto-grouped.
 
-**Input**: (none, or optional file filter)
-**Output**: List of breakpoints, each with:
-- id, file, line, enabled, condition (if any), log_expression (if any), suspend (true/false), hit_count
+**Input**: `file` (optional) — filter by file path substring
+**Output**:
+```
+#2 src/index.php:5
+src/WorldClass.php:13
+ - #3
+ - #4 (disabled)
+ - #5
+ - #6 (condition: $foo === 'bar', log: $foo, no suspend)
+#10 src/NonUsedClass.php:5 (method)
+```
+Or: `No breakpoints in project found`
+Or: `No breakpoints in src/Foo.php found`
+Or: `File 'src/nonExistent' not found` (when the file doesn't exist at all)
+
+**Annotations** (only non-default state is shown):
+- `method` — method breakpoint (vs line breakpoint)
+- `vendor` — breakpoint is in a vendor/ directory
+- `disabled` — breakpoint is not enabled
+- `condition: expr` — has a condition expression
+- `log: expr` — has a log expression
+- `no suspend` — won't pause execution when hit
 
 ---
 
@@ -59,13 +194,20 @@ List all breakpoints in the project.
 Add a line breakpoint.
 
 **Input**:
-- `file` (required) — file path
-- `line` (required) — line number
-- `condition` (optional) — PHP expression, e.g. `$request === null`
+- `location` (required) — file:line, e.g. `src/index.php:15`
+- `condition` (optional) — PHP expression, e.g. `$count > 10`
 - `log_expression` (optional) — expression to evaluate and log when hit
 - `suspend` (optional, default true) — whether to pause execution
 
-**Output**: The created breakpoint with its id
+**Output**: The created breakpoint. If the line already has breakpoints, lists them grouped:
+```
+#6 src/WorldClass.php:13
+
+src/WorldClass.php:13 also has other breakpoints:
+ - #3 (condition: $foo === '')
+ - #4
+ - #5 (disabled)
+```
 
 ---
 
@@ -73,24 +215,35 @@ Add a line breakpoint.
 Modify an existing breakpoint.
 
 **Input**:
-- `id` (required) — breakpoint id
+- `id` (required) — breakpoint #ID or file:line reference (accepts `#` prefix)
 - `enabled` (optional) — true/false
 - `condition` (optional) — new condition (empty string to remove)
 - `log_expression` (optional) — new log expression
 - `suspend` (optional) — true/false
 
-**Output**: Updated breakpoint
+**Output**: Updated breakpoint in `#ID file:line (annotations)` notation.
+**Not found**: Shows matching breakpoints (substring filter) or full list if no matches.
+**Ambiguous file:line**: Lists all breakpoints at that line with guidance to use #ID.
 
 ---
 
 #### `breakpoint_remove`
-Remove breakpoint(s).
+Remove breakpoint(s). Requires explicit targets — no silent "remove all".
 
 **Input**:
-- `id` (optional) — specific breakpoint id
-- `all` (optional) — true to clear all breakpoints
+- `id` (optional) — #ID, file:line, file path, or file substring. Comma-separated for multiple. Accepts `#` prefix. All formats can be mixed in one call.
+- `all` (optional) — set to `true` to remove ALL breakpoints in the project
 
-**Output**: Confirmation + remaining breakpoint count
+**Output**: Lists removed breakpoints + remaining count:
+```
+#3 src/WorldClass.php:13 (condition: $foo === '')
+#4 src/WorldClass.php:13
+
+2 breakpoint(s) remaining in project
+```
+**Not found**: Shows matching breakpoints (substring filter) or full list if no matches.
+**Ambiguous file:line**: Same as update — lists options with guidance.
+**No params**: Error asking to specify targets or use `all=true`.
 
 ---
 
@@ -100,8 +253,12 @@ Remove breakpoint(s).
 List active debug sessions.
 
 **Input**: (none)
-**Output**: List of sessions, each with:
-- id, name, status (paused/running/stopped), current_file, current_line, active (true/false)
+**Output**:
+```
+#12345 "index.php" [paused] at src/index.php:15 (active)
+#12346 "test.php" [running]
+```
+Or: `No active debug sessions`
 
 ---
 
@@ -109,10 +266,11 @@ List active debug sessions.
 Stop debug session(s).
 
 **Input**:
-- `session_id` (optional) — specific session. If omitted + only one session → stops that one. If omitted + multiple → error asking to specify.
+- `session_id` (optional) — #ID of session. If omitted + only one session → stops it. If omitted + multiple → error listing sessions.
 - `all` (optional) — true to stop all sessions
 
-**Output**: Confirmation
+**Output**: Stopped session in `#ID "name" [stopped]` notation.
+**Multiple sessions**: Lists them with guidance to use #ID or all=true.
 
 ---
 

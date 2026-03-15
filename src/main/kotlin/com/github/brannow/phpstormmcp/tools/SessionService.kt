@@ -5,11 +5,8 @@ import com.intellij.openapi.components.Service
 import com.intellij.openapi.project.Project
 import com.intellij.xdebugger.XDebugSession
 import com.intellij.xdebugger.XDebuggerManager
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
 import java.util.concurrent.CompletableFuture
 
-@Serializable
 data class SessionInfo(
     val id: String,
     val name: String,
@@ -49,7 +46,7 @@ class SessionService(private val project: Project) {
             name = session.sessionName,
             status = sessionStatus(session),
             currentFile = position?.file?.path?.let { toProjectRelativePath(it) },
-            currentLine = position?.line?.let { it + 1 }, // 0-based → 1-based
+            currentLine = position?.line?.let { it + 1 },
             active = session === currentSession
         )
     }
@@ -65,7 +62,7 @@ class SessionService(private val project: Project) {
     fun stopSession(sessionId: String): SessionInfo {
         val manager = getDebuggerManager()
         val session = findSessionById(sessionId)
-            ?: throw IllegalArgumentException("Session not found: $sessionId")
+            ?: throw IllegalArgumentException("Session not found: #$sessionId")
 
         val info = toSessionInfo(session, manager.currentSession)
         val future = CompletableFuture<Unit>()
@@ -79,55 +76,56 @@ class SessionService(private val project: Project) {
         return info.copy(status = "stopped")
     }
 
-    fun stopAllSessions(): Int {
-        val sessions = getDebuggerManager().debugSessions.filter { !it.isStopped }
-        if (sessions.isEmpty()) return 0
+    fun stopAllSessions(): List<SessionInfo> {
+        val manager = getDebuggerManager()
+        val currentSession = manager.currentSession
+        val sessions = manager.debugSessions.filter { !it.isStopped }
+        if (sessions.isEmpty()) return emptyList()
 
-        val future = CompletableFuture<Int>()
+        val infos = sessions.map { toSessionInfo(it, currentSession) }
+        val future = CompletableFuture<Unit>()
 
         ApplicationManager.getApplication().invokeLater {
-            var count = 0
-            for (session in sessions) {
-                session.stop()
-                count++
-            }
-            future.complete(count)
+            sessions.forEach { it.stop() }
+            future.complete(Unit)
         }
 
-        return future.get()
+        future.get()
+        return infos.map { it.copy(status = "stopped") }
     }
 
-    fun stopSmart(sessionId: String?): Pair<String, Int> {
+    fun stopSmart(sessionId: String?): SessionInfo {
         if (sessionId != null) {
-            val info = stopSession(sessionId)
-            return Pair("Stopped session '${info.name}'", 1)
+            return stopSession(sessionId)
         }
 
         val sessions = getDebuggerManager().debugSessions.filter { !it.isStopped }
         return when {
             sessions.isEmpty() -> throw IllegalStateException("No active debug sessions")
-            sessions.size == 1 -> {
-                val info = stopSession(sessionId(sessions.first()))
-                Pair("Stopped session '${info.name}'", 1)
+            sessions.size == 1 -> stopSession(sessionId(sessions.first()))
+            else -> {
+                val manager = getDebuggerManager()
+                val currentSession = manager.currentSession
+                val infos = sessions.map { toSessionInfo(it, currentSession) }
+                throw AmbiguousSessionException(infos)
             }
-            else -> throw IllegalArgumentException(
-                "Multiple active sessions (${sessions.size}). Specify session_id or use all=true. " +
-                    "Sessions: ${sessions.joinToString { "'${it.sessionName}' (${sessionId(it)})" }}"
-            )
         }
     }
 
     private fun findSessionById(id: String): XDebugSession? {
+        val cleanId = id.trimStart('#').trim()
         return getDebuggerManager().debugSessions.firstOrNull {
-            sessionId(it) == id
+            sessionId(it) == cleanId
         }
     }
 
     companion object {
-        val json = Json { prettyPrint = true }
-
         fun getInstance(project: Project): SessionService {
             return project.getService(SessionService::class.java)
         }
     }
 }
+
+class AmbiguousSessionException(
+    val sessions: List<SessionInfo>
+) : IllegalArgumentException()

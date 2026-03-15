@@ -3,10 +3,7 @@ package com.github.brannow.phpstormmcp.tools
 import com.github.brannow.phpstormmcp.statusbar.McpActivityLog
 import com.intellij.openapi.project.Project
 import io.modelcontextprotocol.kotlin.sdk.server.Server
-import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
-import io.modelcontextprotocol.kotlin.sdk.types.TextContent
 import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
@@ -16,9 +13,10 @@ fun Server.registerSessionTools(project: Project) {
     val service = SessionService.getInstance(project)
     val activityLog = McpActivityLog.getInstance(project)
 
+    // --- session_list ---
     addTool(
         name = "session_list",
-        description = "List active debug sessions with their status (paused/running), current file and line, and which session is active.",
+        description = "List active debug sessions with their status (paused/running), current position, and which session is active.",
         inputSchema = ToolSchema(
             properties = buildJsonObject {},
             required = emptyList()
@@ -28,24 +26,24 @@ fun Server.registerSessionTools(project: Project) {
         try {
             val sessions = service.listSessions()
             if (sessions.isEmpty()) {
-                CallToolResult(content = listOf(TextContent("No active debug sessions")))
+                ok("No active debug sessions")
             } else {
-                val json = SessionService.json.encodeToString(sessions)
-                CallToolResult(content = listOf(TextContent(json)))
+                ok(formatSessionList(sessions))
             }
         } catch (e: Exception) {
-            CallToolResult(content = listOf(TextContent("Error: ${e.message}")), isError = true)
+            err("Error: ${e.message}")
         }
     }
 
+    // --- session_stop ---
     addTool(
         name = "session_stop",
-        description = "Stop debug session(s). With no arguments: stops the only active session, or errors if multiple exist. Use session_id to target a specific session, or all=true to stop everything.",
+        description = "Stop debug session(s). With no arguments: stops the only active session, or lists sessions if multiple exist. Use session_id to target a specific session, or all=true to stop everything.",
         inputSchema = ToolSchema(
             properties = buildJsonObject {
                 putJsonObject("session_id") {
                     put("type", "string")
-                    put("description", "ID of the session to stop (from session_list). Omit if only one session is active.")
+                    put("description", "#ID of the session to stop (from session_list). Omit if only one session is active.")
                 }
                 putJsonObject("all") {
                     put("type", "boolean")
@@ -60,27 +58,26 @@ fun Server.registerSessionTools(project: Project) {
 
         activityLog.log("session_stop" + when {
             all -> " (all)"
-            sessionId != null -> " ($sessionId)"
+            sessionId != null -> " (#$sessionId)"
             else -> ""
         })
 
         try {
             if (all) {
-                val count = service.stopAllSessions()
-                val response = buildJsonObject {
-                    put("stopped", count)
-                    put("message", if (count > 0) "Stopped $count session(s)" else "No active sessions to stop")
+                val stopped = service.stopAllSessions()
+                if (stopped.isEmpty()) {
+                    ok("No active debug sessions")
+                } else {
+                    ok(formatSessionList(stopped))
                 }
-                CallToolResult(content = listOf(TextContent(response.toString())))
             } else {
-                val (message, _) = service.stopSmart(sessionId)
-                val response = buildJsonObject {
-                    put("message", message)
-                }
-                CallToolResult(content = listOf(TextContent(response.toString())))
+                val info = service.stopSmart(sessionId)
+                ok(formatSession(info))
             }
+        } catch (e: AmbiguousSessionException) {
+            err("Multiple active sessions, use #ID to stop a specific one or all=true to stop all:\n\n${formatSessionList(e.sessions)}")
         } catch (e: Exception) {
-            CallToolResult(content = listOf(TextContent("Error: ${e.message}")), isError = true)
+            err("Error: ${e.message}")
         }
     }
 }
