@@ -1,0 +1,28 @@
+# Build output
+build/
+out/
+
+# Gradle
+.gradle/
+!gradle/wrapper/gradle-wrapper.jar
+!gradle/wrapper/gradle-wrapper.properties
+
+# IDE
+.idea/
+.intellijPlatform/
+*.iml
+*.iws
+*.ipr
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Windows batch file (we're on macOS, gradlew is sufficient)
+gradlew.bat
+
+# Reference repositories (cloned, not ours)
+internal/reference-Repository/
+
+# Claude private data
+.claude-private/

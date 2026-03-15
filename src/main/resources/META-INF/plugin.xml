@@ -1,0 +1,18 @@
+<idea-plugin>
+    <id>com.github.brannow.phpstormmcp</id>
+    <name>PhpStorm MCP</name>
+    <vendor>brannow</vendor>
+    <description><![CDATA[
+        Hello World - MCP plugin skeleton for PhpStorm.
+    ]]></description>
+
+    <depends>com.intellij.modules.platform</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <notificationGroup
+            id="PhpStorm MCP"
+            displayType="BALLOON"/>
+        <postStartupActivity
+            implementation="com.github.brannow.phpstormmcp.ProjectOpenListener"/>
+    </extensions>
+</idea-plugin>
