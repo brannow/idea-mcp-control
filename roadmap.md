@@ -49,9 +49,18 @@ First real tools — breakpoints work without an active debug session, so they'r
 - [x] `breakpoint_list` — list all line breakpoints, optional file filter
 - [x] `breakpoint_add` — add a line breakpoint (file + line), with optional condition, log expression, suspend toggle
 - [x] `breakpoint_update` — enable/disable, change condition/log expression/suspend by ID or file:line
-- [x] `breakpoint_remove` — remove by ID(s), file:line(s) (comma-separated), or omit to remove all
+- [x] `breakpoint_remove` — remove by ID(s), file:line(s) (comma-separated), or `all=true` to remove all
 - [x] Flexible file paths: accepts absolute or project-relative paths, returns project-relative
 - [x] Flexible IDs: numeric timestamp ID or `file:line` reference (e.g. `src/index.php:5`)
+- [x] Line validation: rejects line 0, negative lines, and lines beyond the file's actual line count
+- [x] Library detection via `ProjectFileIndex.isInLibrary()` (not string matching on "vendor/")
+- [x] Multi-breakpoint-line hint: groups same-line breakpoints with `(multi-breakpoint-line)` label everywhere
+- [x] Two output modes: full detail for direct list, compact index (`#ID file:line`) for context hints
+- [x] Not-found errors always show all project breakpoints (no substring filtering)
+- [x] Update validates ID exists before checking for missing changes (most actionable error first)
+- [x] No-changes guard on update: rejects calls with only an ID and no change params
+- [x] Ambiguous file:line handling with guidance message
+- [x] Unit tests: parameterized test suite covering list, add, update, remove with all edge cases
 
 **Test**: Breakpoints added via MCP Inspector appear in PhpStorm gutter. List matches Breakpoints dialog. Remove clears them. ✅ Verified.
 
@@ -62,23 +71,87 @@ First real tools — breakpoints work without an active debug session, so they'r
 - [x] `session_list` — list active debug sessions with status and active flag
 - [x] `session_stop` — stop a specific session or all sessions
 - [x] Active session detection (which session is currently focused in the UI)
+- [x] Smart stop: no params + no sessions = ok (no-op), specific ID not found = error
+- [x] Consistent `ok`/`err` behavior across all stop scenarios
+- [x] Unit tests: parameterized test suite for list and stop with edge cases
 
-**Test**: Manually start 1-2 debug sessions in PhpStorm. Call `session_list` → verify output matches the debug tabs. Call `session_stop` → verify session ends.
+**Test**: Manually start 1-2 debug sessions in PhpStorm. Call `session_list` → verify output matches the debug tabs. Call `session_stop` → verify session ends. ✅ Verified.
 
 ---
 
-## Milestone 4: Debug Snapshot
+## Milestone 3.5: Output Design & Code Quality ✅
 
-Build the snapshot response format before adding navigation tools — this is the foundation all other tools return.
+Natural language output system, testability refactoring, and platform compliance.
 
-- [ ] Snapshot data model (session, position, source, variables, stacktrace)
-- [ ] Source context extraction: scope-aware (detect method boundaries, show method or ±10 lines)
-- [ ] Variable preview generation (scalars → value, objects → class name, arrays → count)
-- [ ] Stacktrace extraction from XSuspendContext
-- [ ] `debug_snapshot` tool — returns full snapshot of current state
-- [ ] `include` parameter — filter snapshot to only requested parts
+- [x] Natural language output: tools respond with human-readable text, not JSON
+- [x] Shared response pattern: result → context → error, consistent across all tools
+- [x] Services made final: Platform interface pattern for testability without `open` classes
+- [x] IntelliJ platform compliance: `JBList` usage, final light services, dead code removal
+- [x] Tool design spec (ToolDesign.md) updated with all output patterns and validation rules
 
-**Test**: Manually pause at a breakpoint. Call `debug_snapshot` → verify the response matches what you see in the PhpStorm debug panel (same variables, same stack, same code location). Test `include: ["variables"]` returns only variables.
+---
+
+## Milestone 4a: Source Context
+
+When paused at a breakpoint, show the agent where it is and the surrounding code. This is the read-the-file part of the snapshot.
+
+- [ ] Get current position from paused session (`XDebugSession.currentPosition`)
+- [ ] Read source file content around current line
+- [ ] Scope-aware extraction: detect containing method/function boundaries
+  - Method ≤ 30 lines → show the whole method
+  - Method > 30 lines → show ±10 lines around current position
+  - Always include method signature for context
+- [ ] Mark the current line in output (e.g. `→` prefix or similar)
+- [ ] Handle edge cases: top-level code (no method), file not found, binary files
+
+**Test**: Manually pause at a breakpoint inside a method. Verify the source context shows the method with the current line marked. Pause at top-level code → verify reasonable context is shown.
+
+---
+
+## Milestone 4b: Stack Frames
+
+Walk the call stack from `XSuspendContext` and present it as readable output.
+
+- [ ] Extract execution stack from `XSuspendContext` → `XExecutionStack`
+- [ ] Iterate `XStackFrame[]` with async `computeStackFrames()` callback
+- [ ] For each frame: extract file, line, function/method name, class
+- [ ] Format as readable stacktrace (deepest first or shallowest first — decide based on what's most useful)
+- [ ] Handle edge cases: native frames, eval'd code, very deep stacks (truncation?)
+
+**Test**: Pause at a breakpoint 3+ calls deep. Verify the stack matches PhpStorm's Frames panel. Check that file paths are project-relative.
+
+---
+
+## Milestone 4c: Variables
+
+The hardest part — `XStackFrame.computeChildren()` is async/callback-based, values are lazy-loaded.
+
+- [ ] Extract top-level variables from current `XStackFrame`
+- [ ] Handle async `computeChildren()` callback pattern
+- [ ] Variable preview generation:
+  - Scalars → value (`$count = 42`, `$name = "hello"`)
+  - Objects → class name (`$request = {ServerRequest}`)
+  - Arrays → count (`$items = array(15)`)
+  - Null → `$foo = null`
+  - Truncate long strings, limit preview depth
+- [ ] Handle superglobals, special PHP variables
+- [ ] Foundation for later `debug_variable_detail` (expanding nested values)
+
+**Test**: Pause at a breakpoint with mixed variable types. Verify previews match PhpStorm's Variables panel. Check that objects show class names, arrays show counts, strings are truncated sensibly.
+
+---
+
+## Milestone 4d: Debug Snapshot Tool
+
+Compose the pieces from 4a-4c into the `debug_snapshot` tool.
+
+- [ ] `debug_snapshot` tool — returns full snapshot of current paused state
+- [ ] Snapshot data model composing: session info + source context + stack frames + variables
+- [ ] `include` parameter — filter snapshot to only requested parts (e.g. `["source", "variables"]`)
+- [ ] Session + position always included regardless of `include` (minimal overhead, always needed)
+- [ ] Handle "not paused" state gracefully (session running, no session, session stopped)
+
+**Test**: Pause at a breakpoint. Call `debug_snapshot` → verify the response matches PhpStorm's debug panel. Test `include: ["variables"]` returns only variables + position. Test with no active session → meaningful error.
 
 ---
 
@@ -86,12 +159,13 @@ Build the snapshot response format before adding navigation tools — this is th
 
 Each tool triggers an action and returns a snapshot when the debugger pauses again.
 
+- [ ] Async wait pattern: trigger action → listen for pause event → return snapshot
 - [ ] `debug_step_over` — step over + return snapshot
 - [ ] `debug_step_into` — step into + return snapshot
 - [ ] `debug_step_out` — step out + return snapshot
 - [ ] `debug_continue` — resume + return snapshot (or session-ended)
 - [ ] `debug_run_to_line` — run to specific line + return snapshot
-- [ ] Async wait pattern: trigger action → listen for pause → return result
+- [ ] Timeout handling: what if `debug_continue` never hits a breakpoint?
 
 **Test**: Pause at a breakpoint. Call `debug_step_over` → verify response shows the next line. Call `debug_step_into` on a function call → verify you're inside the function. Call `debug_continue` → verify you hit the next breakpoint or session ends.
 
@@ -111,7 +185,6 @@ Each tool triggers an action and returns a snapshot when the debugger pauses aga
 ## Milestone 7: Integration & Polish
 
 - [ ] Error handling: graceful responses for no session, session running (not paused), invalid paths
-- [ ] Timeout handling for navigation tools (what if `debug_continue` never hits a breakpoint?)
 - [ ] Multi-session: verify all tools work correctly with 2+ concurrent sessions
 - [ ] Edge cases: very large stack traces, deeply nested objects, long string values
 - [ ] Performance: snapshot generation should be fast, variable expansion should be lazy
