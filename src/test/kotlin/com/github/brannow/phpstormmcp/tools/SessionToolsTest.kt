@@ -76,12 +76,14 @@ class SessionToolsTest {
         val project = mockk<Project>()
         every { project.basePath } returns "/project"
 
-        return object : SessionService(project) {
+        val service = SessionService(project)
+        service.platform = object : SessionService.Platform {
             override fun getDebuggerManager() = manager
             override fun sessionId(session: XDebugSession) =
                 mockSessions.entries.first { it.value === session }.key.id
             override fun runOnEdt(action: () -> Unit) = action()
         }
+        return service
     }
 
     private fun resultText(result: io.modelcontextprotocol.kotlin.sdk.types.CallToolResult): String =
@@ -93,7 +95,7 @@ class SessionToolsTest {
 
     @ParameterizedTest(name = "{0}")
     @MethodSource("sessionListCases")
-    fun `session_list`(case: Case) {
+    fun session_list(case: Case) {
         val service = buildService(case.sessions)
         val result = handleSessionList(service)
         assertEquals(case.expectedOutput, resultText(result))
@@ -106,7 +108,7 @@ class SessionToolsTest {
 
     @ParameterizedTest(name = "{0}")
     @MethodSource("sessionStopCases")
-    fun `session_stop`(case: StopCase) {
+    fun session_stop(case: StopCase) {
         val service = buildService(case.sessions)
         try {
             val result = handleSessionStop(service, case.sessionId, case.all)
@@ -178,7 +180,6 @@ class SessionToolsTest {
                 name = "no params, no sessions",
                 sessions = emptyList(),
                 expectedOutput = "No sessions in project",
-                isError = true,
             ),
             StopCase(
                 name = "no params, one session → stops it",

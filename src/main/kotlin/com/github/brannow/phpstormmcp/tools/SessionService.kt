@@ -17,20 +17,28 @@ data class SessionInfo(
 )
 
 @Service(Service.Level.PROJECT)
-open class SessionService(private val project: Project) {
+class SessionService(private val project: Project) {
 
-    internal open fun getDebuggerManager(): XDebuggerManager = XDebuggerManager.getInstance(project)
+    internal interface Platform {
+        fun getDebuggerManager(): XDebuggerManager
+        fun sessionId(session: XDebugSession): String
+        fun runOnEdt(action: () -> Unit)
+    }
 
-    internal open fun sessionId(session: XDebugSession): String =
-        System.identityHashCode(session).toString()
+    internal var platform: Platform = object : Platform {
+        override fun getDebuggerManager(): XDebuggerManager = XDebuggerManager.getInstance(project)
 
-    internal open fun runOnEdt(action: () -> Unit) {
-        val future = CompletableFuture<Unit>()
-        ApplicationManager.getApplication().invokeLater {
-            action()
-            future.complete(Unit)
+        override fun sessionId(session: XDebugSession): String =
+            System.identityHashCode(session).toString()
+
+        override fun runOnEdt(action: () -> Unit) {
+            val future = CompletableFuture<Unit>()
+            ApplicationManager.getApplication().invokeLater {
+                action()
+                future.complete(Unit)
+            }
+            future.get()
         }
-        future.get()
     }
 
     private fun sessionStatus(session: XDebugSession): String = when {
@@ -51,7 +59,7 @@ open class SessionService(private val project: Project) {
     private fun toSessionInfo(session: XDebugSession, currentSession: XDebugSession?): SessionInfo {
         val position = session.currentPosition
         return SessionInfo(
-            id = sessionId(session),
+            id = platform.sessionId(session),
             name = session.sessionName,
             status = sessionStatus(session),
             currentFile = position?.file?.path?.let { toProjectRelativePath(it) },
@@ -61,7 +69,7 @@ open class SessionService(private val project: Project) {
     }
 
     fun listSessions(): List<SessionInfo> {
-        val manager = getDebuggerManager()
+        val manager = platform.getDebuggerManager()
         val currentSession = manager.currentSession
         return manager.debugSessions
             .filter { !it.isStopped }
@@ -70,23 +78,23 @@ open class SessionService(private val project: Project) {
 
     fun stopSession(sessionId: String): SessionInfo {
         val cleanId = sessionId.trimStart('#').trim()
-        val manager = getDebuggerManager()
+        val manager = platform.getDebuggerManager()
         val session = findSessionById(cleanId)
             ?: throw SessionNotFoundException(cleanId, listSessions())
 
         val info = toSessionInfo(session, manager.currentSession)
-        runOnEdt { session.stop() }
+        platform.runOnEdt { session.stop() }
         return info.copy(status = "stopped")
     }
 
     fun stopAllSessions(): List<SessionInfo> {
-        val manager = getDebuggerManager()
+        val manager = platform.getDebuggerManager()
         val currentSession = manager.currentSession
         val sessions = manager.debugSessions.filter { !it.isStopped }
         if (sessions.isEmpty()) return emptyList()
 
         val infos = sessions.map { toSessionInfo(it, currentSession) }
-        runOnEdt { sessions.forEach { it.stop() } }
+        platform.runOnEdt { sessions.forEach { it.stop() } }
         return infos.map { it.copy(status = "stopped") }
     }
 
@@ -95,7 +103,7 @@ open class SessionService(private val project: Project) {
             return stopSession(sessionId)
         }
 
-        val manager = getDebuggerManager()
+        val manager = platform.getDebuggerManager()
         val sessions = manager.debugSessions.filter { !it.isStopped }
         if (sessions.isEmpty()) {
             throw IllegalStateException("No sessions in project")
@@ -103,13 +111,13 @@ open class SessionService(private val project: Project) {
 
         // Prefer active session, fall back to first on the stack
         val target = manager.currentSession?.takeIf { !it.isStopped } ?: sessions.first()
-        return stopSession(sessionId(target))
+        return stopSession(platform.sessionId(target))
     }
 
     private fun findSessionById(id: String): XDebugSession? {
         val cleanId = id.trimStart('#').trim()
-        return getDebuggerManager().debugSessions.firstOrNull {
-            sessionId(it) == cleanId
+        return platform.getDebuggerManager().debugSessions.firstOrNull {
+            platform.sessionId(it) == cleanId
         }
     }
 

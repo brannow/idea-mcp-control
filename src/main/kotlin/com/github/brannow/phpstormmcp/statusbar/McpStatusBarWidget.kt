@@ -104,7 +104,7 @@ class McpStatusBarWidget(private val project: Project) : StatusBarWidget, Multip
             logListModel.addElement("No activity yet")
         }
 
-        val logList = JList(logListModel).apply {
+        val logList = com.intellij.ui.components.JBList(logListModel).apply {
             font = UIUtil.getLabelFont().deriveFont(UIUtil.getFontSize(UIUtil.FontSize.MINI))
             selectionMode = ListSelectionModel.SINGLE_SELECTION
         }

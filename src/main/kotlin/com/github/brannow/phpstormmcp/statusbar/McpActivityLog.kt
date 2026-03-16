@@ -15,8 +15,6 @@ class McpActivityLog {
     )
 
     private val entries = CopyOnWriteArrayList<Entry>()
-    private val listeners = CopyOnWriteArrayList<() -> Unit>()
-
     val recentEntries: List<Entry>
         get() = entries.toList()
 
@@ -27,15 +25,6 @@ class McpActivityLog {
         while (entries.size > MAX_ENTRIES) {
             entries.removeAt(0)
         }
-        listeners.forEach { it() }
-    }
-
-    fun addListener(listener: () -> Unit) {
-        listeners.add(listener)
-    }
-
-    fun removeListener(listener: () -> Unit) {
-        listeners.remove(listener)
     }
 
     companion object {

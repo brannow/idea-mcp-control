@@ -93,7 +93,8 @@ class BreakpointToolsTest {
         val project = mockk<Project>()
         every { project.basePath } returns "/project"
 
-        return object : BreakpointService(project) {
+        val service = BreakpointService(project)
+        service.platform = object : BreakpointService.Platform {
             override fun getBreakpointManager() = manager
             override fun findLineBreakpointType() = mockType
             override fun resolveFile(path: String): VirtualFile? {
@@ -103,8 +104,11 @@ class BreakpointToolsTest {
                 val rel = path.removePrefix("/project/")
                 return virtualFiles[rel]
             }
+            override fun getLineCount(file: VirtualFile): Int = FILE_LINE_COUNT
+            override fun isLibrary(file: VirtualFile): Boolean = file.path.contains("/vendor/")
             override fun <T> runOnEdt(action: () -> T): T = action()
         }
+        return service
     }
 
     private fun mockExpression(value: String): XExpression {
@@ -174,7 +178,7 @@ class BreakpointToolsTest {
 
     @ParameterizedTest(name = "{0}")
     @MethodSource("listCases")
-    fun `breakpoint_list`(case: ListCase) {
+    fun breakpoint_list(case: ListCase) {
         val files = case.knownFiles ?: case.breakpoints.map { it.file }.toSet()
         val service = buildService(case.breakpoints, files)
         val result = handleBreakpointList(service, case.fileFilter)
@@ -202,7 +206,7 @@ class BreakpointToolsTest {
 
     @ParameterizedTest(name = "{0}")
     @MethodSource("addCases")
-    fun `breakpoint_add`(case: AddCase) {
+    fun breakpoint_add(case: AddCase) {
         val files = case.knownFiles ?: case.breakpoints.map { it.file }.toSet()
         val service = buildService(case.breakpoints, files)
         try {
@@ -245,7 +249,7 @@ class BreakpointToolsTest {
 
     @ParameterizedTest(name = "{0}")
     @MethodSource("updateCases")
-    fun `breakpoint_update`(case: UpdateCase) {
+    fun breakpoint_update(case: UpdateCase) {
         val service = buildService(case.breakpoints)
         val result = handleBreakpointUpdate(service, case.id, case.enabled, case.condition, case.logExpression, case.suspend)
         assertEquals(case.expectedOutput, resultText(result))
@@ -270,7 +274,7 @@ class BreakpointToolsTest {
 
     @ParameterizedTest(name = "{0}")
     @MethodSource("removeCases")
-    fun `breakpoint_remove`(case: RemoveCase) {
+    fun breakpoint_remove(case: RemoveCase) {
         val files = case.knownFiles ?: case.breakpoints.map { it.file }.toSet()
         val service = buildService(case.breakpoints, files)
         try {
@@ -285,6 +289,8 @@ class BreakpointToolsTest {
     }
 
     companion object {
+        private const val FILE_LINE_COUNT = 30
+
 
         // Common breakpoint states for reuse
         private val BP_INDEX_5 = BpState(100, "src/index.php", 5)
@@ -360,7 +366,7 @@ class BreakpointToolsTest {
             ListCase(
                 name = "same line, multiple breakpoints → grouped",
                 breakpoints = listOf(BP_WORLD_13, BP_WORLD_13_COND, BP_WORLD_13_DISABLED),
-                expectedOutput = "src/WorldClass.php:13\n" +
+                expectedOutput = "src/WorldClass.php:13 (multi-breakpoint-line)\n" +
                     " - #102\n" +
                     " - #103 (condition: \$foo === '')\n" +
                     " - #104 (disabled)",
@@ -369,7 +375,7 @@ class BreakpointToolsTest {
                 name = "mixed: some grouped, some flat",
                 breakpoints = listOf(BP_INDEX_5, BP_WORLD_13, BP_WORLD_13_COND),
                 expectedOutput = "#100 src/index.php:5\n" +
-                    "src/WorldClass.php:13\n" +
+                    "src/WorldClass.php:13 (multi-breakpoint-line)\n" +
                     " - #102\n" +
                     " - #103 (condition: \$foo === '')",
             ),
@@ -462,6 +468,30 @@ class BreakpointToolsTest {
                 expectedPattern = "File not found: src/nonExistent.php",
                 isError = true,
             ),
+            AddCase(
+                name = "line beyond end of file",
+                breakpoints = emptyList(),
+                knownFiles = setOf("src/index.php"),
+                location = "src/index.php:99",
+                expectedPattern = "Line 99 is beyond end of file (src/index.php has $FILE_LINE_COUNT lines)",
+                isError = true,
+            ),
+            AddCase(
+                name = "negative line number",
+                breakpoints = emptyList(),
+                knownFiles = setOf("src/index.php"),
+                location = "src/index.php:-1",
+                expectedPattern = "Invalid location format. Expected file:line, e.g. \"src/index.php:15\"",
+                isError = true,
+            ),
+            AddCase(
+                name = "line zero",
+                breakpoints = emptyList(),
+                knownFiles = setOf("src/index.php"),
+                location = "src/index.php:0",
+                expectedPattern = "Invalid location format. Expected file:line, e.g. \"src/index.php:15\"",
+                isError = true,
+            ),
 
             // --- Successful add ---
             AddCase(
@@ -482,7 +512,7 @@ class BreakpointToolsTest {
                 breakpoints = listOf(BP_WORLD_13, BP_WORLD_13_COND),
                 location = "src/WorldClass.php:13",
                 expectedPattern = "#{ID} src/WorldClass.php:13\n\n" +
-                    "src/WorldClass.php:13 also has other breakpoints:\n" +
+                    "src/WorldClass.php:13 also has other breakpoints (multi-breakpoint-line):\n" +
                     " - #102\n" +
                     " - #103 (condition: \$foo === '')",
             ),
@@ -539,9 +569,18 @@ class BreakpointToolsTest {
 
             // --- Not found ---
             UpdateCase(
+                name = "wrong ID and no changes → reports ID problem",
+                breakpoints = listOf(BP_INDEX_5),
+                id = "#999",
+                expectedOutput = "Breakpoint '#999' not found, current breakpoints:\n\n" +
+                    "#100 src/index.php:5",
+                isError = true,
+            ),
+            UpdateCase(
                 name = "not found by #ID, empty project",
                 breakpoints = emptyList(),
                 id = "#999",
+                enabled = true,
                 expectedOutput = "Breakpoint '#999' not found, no breakpoints in project",
                 isError = true,
             ),
@@ -549,6 +588,7 @@ class BreakpointToolsTest {
                 name = "not found by #ID, has breakpoints → shows current",
                 breakpoints = listOf(BP_INDEX_5, BP_WORLD_13),
                 id = "#999",
+                enabled = true,
                 expectedOutput = "Breakpoint '#999' not found, current breakpoints:\n\n" +
                     "#100 src/index.php:5\n#102 src/WorldClass.php:13",
                 isError = true,
@@ -557,6 +597,7 @@ class BreakpointToolsTest {
                 name = "not found by #ID, has matching breakpoints → shows matching",
                 breakpoints = listOf(BP_INDEX_5, BP_WORLD_13),
                 id = "#999",
+                enabled = true,
                 expectedOutput = "Breakpoint '#999' not found, current breakpoints:\n\n" +
                     "#100 src/index.php:5\n#102 src/WorldClass.php:13",
                 isError = true,
@@ -565,6 +606,7 @@ class BreakpointToolsTest {
                 name = "not found by file:line",
                 breakpoints = listOf(BP_INDEX_5),
                 id = "src/index.php:99",
+                enabled = true,
                 expectedOutput = "Breakpoint 'src/index.php:99' not found, current breakpoints:\n\n" +
                     "#100 src/index.php:5",
                 isError = true,
@@ -572,15 +614,17 @@ class BreakpointToolsTest {
 
             // --- Found by #ID ---
             UpdateCase(
-                name = "found by #ID, no changes",
+                name = "found by #ID, no changes → error",
                 breakpoints = listOf(BP_INDEX_5),
                 id = "#100",
-                expectedOutput = "#100 src/index.php:5",
+                expectedOutput = "No changes specified. Use enabled, condition, log_expression, or suspend to update.",
+                isError = true,
             ),
             UpdateCase(
                 name = "found by ID without hash",
                 breakpoints = listOf(BP_INDEX_5),
                 id = "100",
+                enabled = true,
                 expectedOutput = "#100 src/index.php:5",
             ),
             UpdateCase(
@@ -655,7 +699,7 @@ class BreakpointToolsTest {
                 breakpoints = listOf(BP_WORLD_13, BP_WORLD_13_COND, BP_WORLD_13_DISABLED),
                 id = "src/WorldClass.php:13",
                 enabled = false,
-                expectedOutput = "src/WorldClass.php:13\n" +
+                expectedOutput = "src/WorldClass.php:13 (multi-breakpoint-line)\n" +
                     " - #102\n" +
                     " - #103 (condition: \$foo === '')\n" +
                     " - #104 (disabled)\n\n" +
@@ -774,7 +818,7 @@ class BreakpointToolsTest {
                 name = "ambiguous file:line → guidance",
                 breakpoints = listOf(BP_WORLD_13, BP_WORLD_13_COND),
                 ids = listOf("src/WorldClass.php:13"),
-                expectedOutput = "src/WorldClass.php:13\n" +
+                expectedOutput = "src/WorldClass.php:13 (multi-breakpoint-line)\n" +
                     " - #102\n" +
                     " - #103 (condition: \$foo === '')\n\n" +
                     "Choose a breakpoint via #ID or remove other breakpoints first.",

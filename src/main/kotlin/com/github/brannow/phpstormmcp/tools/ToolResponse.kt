@@ -29,6 +29,25 @@ fun formatBreakpoint(bp: BreakpointInfo): String {
 }
 
 /**
+ * Just IDs and locations — for context hints where the agent only needs
+ * to know what exists so it can self-correct.
+ * Same-line breakpoints get grouped with a (multi-breakpoint-line) hint.
+ */
+fun formatBreakpointIndex(breakpoints: List<BreakpointInfo>): String {
+    val grouped = linkedMapOf<String, MutableList<BreakpointInfo>>()
+    for (bp in breakpoints) {
+        grouped.getOrPut("${bp.file}:${bp.line}") { mutableListOf() }.add(bp)
+    }
+    return grouped.entries.joinToString("\n") { (location, bps) ->
+        if (bps.size == 1) {
+            "#${bps.first().id} $location"
+        } else {
+            "$location (multi-breakpoint-line)\n${bps.joinToString("\n") { " - #${it.id}" }}"
+        }
+    }
+}
+
+/**
  * Smart list: single breakpoints stay flat, same-line breakpoints get grouped.
  */
 fun formatBreakpointList(breakpoints: List<BreakpointInfo>): String {
@@ -60,10 +79,10 @@ fun formatBreakpointGroupChildren(breakpoints: List<BreakpointInfo>): String {
 }
 
 /**
- * Full grouped view: location as header, breakpoints as indented bullets.
+ * Full grouped view: location as header with hint, breakpoints as indented bullets.
  */
 fun formatBreakpointGroup(location: String, breakpoints: List<BreakpointInfo>): String {
-    return "$location\n${formatBreakpointGroupChildren(breakpoints)}"
+    return "$location (multi-breakpoint-line)\n${formatBreakpointGroupChildren(breakpoints)}"
 }
 
 private fun formatAnnotations(bp: BreakpointInfo): String {

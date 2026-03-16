@@ -15,7 +15,7 @@ internal fun parseLocation(location: String): Pair<String, Int>? {
     val colonIndex = location.lastIndexOf(':')
     if (colonIndex <= 0) return null
     val file = location.substring(0, colonIndex)
-    val line = location.substring(colonIndex + 1).toIntOrNull() ?: return null
+    val line = location.substring(colonIndex + 1).toIntOrNull()?.takeIf { it >= 1 } ?: return null
     return file to line
 }
 
@@ -25,14 +25,7 @@ internal fun parseLocation(location: String): Pair<String, Int>? {
 internal fun notFoundResponse(query: String, service: BreakpointService): CallToolResult {
     val all = service.listBreakpoints()
     if (all.isEmpty()) return err("Breakpoint '$query' not found, no breakpoints in project")
-
-    // Try narrowing to breakpoints matching the query
-    val filtered = service.listBreakpoints(query)
-    return if (filtered.isNotEmpty()) {
-        err("Breakpoint '$query' not found, current breakpoints:\n\n${formatBreakpointList(filtered)}")
-    } else {
-        err("Breakpoint '$query' not found, current breakpoints:\n\n${formatBreakpointList(all)}")
-    }
+    return err("Breakpoint '$query' not found, current breakpoints:\n\n${formatBreakpointIndex(all)}")
 }
 
 /**
@@ -75,7 +68,7 @@ internal fun handleBreakpointAdd(
 
     if (result.existingBreakpoints.isNotEmpty()) {
         val loc = "${result.breakpoint.file}:${result.breakpoint.line}"
-        text.append("\n\n$loc also has other breakpoints:\n")
+        text.append("\n\n$loc also has other breakpoints (multi-breakpoint-line):\n")
         text.append(formatBreakpointGroupChildren(result.existingBreakpoints))
     }
 
@@ -91,13 +84,20 @@ internal fun handleBreakpointUpdate(
     suspend: Boolean?
 ): CallToolResult {
     if (id == null) return err("'id' is required")
+    val hasChanges = enabled != null || condition != null || logExpression != null || suspend != null
 
     return try {
+        if (!hasChanges) {
+            // Validate the ID exists before complaining about missing changes
+            service.updateBreakpoint(id)
+            return err("No changes specified. Use enabled, condition, log_expression, or suspend to update.")
+        }
         val bp = service.updateBreakpoint(id, enabled, condition, logExpression, suspend)
         ok(formatBreakpoint(bp))
     } catch (e: AmbiguousBreakpointException) {
         ambiguousResponse(id, e.breakpoints)
     } catch (e: BreakpointNotFoundException) {
+        // ID problem is the primary error — report it regardless of whether changes were specified
         notFoundResponse(id, service)
     }
 }
@@ -124,7 +124,7 @@ internal fun handleBreakpointRemove(
 
         val remaining = service.listBreakpoints()
         if (remaining.isNotEmpty()) {
-            text.append("\n\n${remaining.size} breakpoint(s) remaining:\n${formatBreakpointList(remaining)}")
+            text.append("\n\n${remaining.size} breakpoint(s) remaining:\n${formatBreakpointIndex(remaining)}")
         }
     }
 
@@ -138,13 +138,7 @@ internal fun handleBreakpointRemove(
         } else if (allBps.isEmpty()) {
             text.append("Breakpoint $notFoundStr not found, no breakpoints in project")
         } else {
-            // Try narrowing to breakpoints matching the not-found queries
-            val filtered = result.notFound.flatMap { q -> service.listBreakpoints(q) }.distinct()
-            if (filtered.isNotEmpty()) {
-                text.append("Breakpoint $notFoundStr not found, current breakpoints:\n\n${formatBreakpointList(filtered)}")
-            } else {
-                text.append("Breakpoint $notFoundStr not found, current breakpoints:\n\n${formatBreakpointList(allBps)}")
-            }
+            text.append("Breakpoint $notFoundStr not found, current breakpoints:\n\n${formatBreakpointIndex(allBps)}")
         }
     }
 

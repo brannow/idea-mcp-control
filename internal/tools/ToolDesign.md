@@ -42,12 +42,21 @@ Every tool response follows the same three-part structure. The structure is pred
 
 **1. Self-contained responses** — Every response includes enough context for the agent to decide its next action without extra tool calls. A bad tool response causes 3-5 follow-up calls (list, inspect, retry). A good one causes zero.
 
-- Error: not found → show what *does* exist (the full list), so the agent can self-correct
+- Error: not found → show all breakpoints in the project (full list, not filtered), so the agent can self-correct
 - Error: ambiguous → list the options with their IDs and tell the agent how to resolve it
-- Error: empty state → say clearly "No breakpoints in project found", not a generic error
+- Error: empty state → say clearly "No breakpoints in project", not a generic error
 - Success with edge case → proactively include the context the agent will need next
 
-**2. Consistent notation across all tools** — Each domain has one canonical format:
+**2. Two output modes for breakpoint lists** — Full detail for direct list calls, compact index for context hints:
+
+| Mode | When | Format |
+|------|------|--------|
+| Full | `breakpoint_list`, removed items | `#ID file:line (annotations)` with same-line grouping |
+| Index | Not-found hints, remaining after remove | `#ID file:line` — just IDs and locations, no annotations |
+
+The agent doesn't need to know a breakpoint is disabled or conditional when it's just trying to find the right ID after a not-found error.
+
+**3. Consistent notation across all tools** — Each domain has one canonical format:
 
 | Domain      | Format                                           | Example                                                    |
 |-------------|--------------------------------------------------|------------------------------------------------------------|
@@ -56,9 +65,16 @@ Every tool response follows the same three-part structure. The structure is pred
 
 Annotations are parenthetical, comma-separated. Only non-default state is shown (enabled + suspend are defaults, so only `disabled` and `no suspend` appear).
 
-**3. Input format matches output format** — If the output says `src/index.php:15`, the input accepts `src/index.php:15`. The agent can use output from one tool as input to another without reformatting. No separate file/line parameters when a single `location` is more natural.
+**4. Multi-breakpoint-line hint** — Multiple breakpoints on the same line is unusual and foreign to most agents. Whenever same-line breakpoints are grouped (in any output mode), the header includes `(multi-breakpoint-line)` to signal this concept explicitly:
+```
+src/WorldClass.php:13 (multi-breakpoint-line)
+ - #3
+ - #5 (disabled)
+```
 
-**4. Guide, don't dump** — When the agent hits an edge case (like multiple breakpoints on one line), don't just list data — tell it what to do: "Choose a breakpoint via #ID or remove other breakpoints first."
+**5. Input format matches output format** — If the output says `src/index.php:15`, the input accepts `src/index.php:15`. The agent can use output from one tool as input to another without reformatting. No separate file/line parameters when a single `location` is more natural.
+
+**6. Guide, don't dump** — When the agent hits an edge case (like multiple breakpoints on one line), don't just list data — tell it what to do: "Choose a breakpoint via #ID or remove other breakpoints first."
 
 ### Response examples
 
@@ -72,7 +88,7 @@ These examples show the shared pattern applied across different tools and scenar
 **Success — list (list, remove):**
 ```
 #2 src/index.php:5
-src/WorldClass.php:13
+src/WorldClass.php:13 (multi-breakpoint-line)
  - #3 (condition: $foo === '')
  - #5 (disabled)
 ```
@@ -81,23 +97,25 @@ src/WorldClass.php:13
 ```
 #6 src/WorldClass.php:13
 
-src/WorldClass.php:13 also has other breakpoints:
+src/WorldClass.php:13 also has other breakpoints (multi-breakpoint-line):
  - #3 (condition: $foo === '')
  - #4
  - #5 (disabled)
 ```
 
-**Success — remove with remaining:**
+**Success — remove with remaining (compact index for remaining):**
 ```
 #3 src/WorldClass.php:13 (condition: $foo === '')
 #4 src/WorldClass.php:13
 
-2 breakpoint(s) remaining in project
+2 breakpoint(s) remaining:
+#5 src/index.php:5
+#6 src/index.php:10
 ```
 
 **Error: ambiguous — tree format + guidance:**
 ```
-src/WorldClass.php:13
+src/WorldClass.php:13 (multi-breakpoint-line)
  - #3 (condition: $foo === '')
  - #4
  - #5 (disabled)
@@ -106,19 +124,24 @@ src/WorldClass.php:13
 Choose a breakpoint via #ID or remove other breakpoints first.
 ```
 
-**Error: not found — narrowed to matching breakpoints first:**
+**Error: not found — shows all breakpoints in project (compact index):**
 ```
-Breakpoint 'NonUsedClass' not found, matching breakpoints are:
+Breakpoint '#999' not found, current breakpoints:
 
-#7 src/NonUsedClass.php:9
-#8 src/NonUsedClass.php:8
-#10 src/NonUsedClass.php:5 (method)
+#3 src/index.php:5
+#7 src/WorldClass.php:13
+#10 src/NonUsedClass.php:5
 ```
-Falls back to full project list if no substring matches.
+Always shows the full project list — no substring filtering. The agent gets an unambiguous picture of what exists.
 
 **Error: empty state — one-liner, no ambiguity:**
 ```
-No breakpoints in project found
+No breakpoints in project
+```
+
+**Error: no changes specified on update:**
+```
+No changes specified. Use enabled, condition, log_expression, or suspend to update.
 ```
 
 **Session — same pattern:**
@@ -164,26 +187,26 @@ Session + position are always included (minimal overhead, always needed).
 These work independently of debug sessions — breakpoints exist in the project regardless of whether debugging is active.
 
 #### `breakpoint_list`
-List all breakpoints in the project. Same-line breakpoints are auto-grouped.
+List all breakpoints in the project. Same-line breakpoints are auto-grouped with `(multi-breakpoint-line)` hint.
 
 **Input**: `file` (optional) — filter by file path substring
 **Output**:
 ```
 #2 src/index.php:5
-src/WorldClass.php:13
+src/WorldClass.php:13 (multi-breakpoint-line)
  - #3
  - #4 (disabled)
  - #5
  - #6 (condition: $foo === 'bar', log: $foo, no suspend)
 #10 src/NonUsedClass.php:5 (method)
 ```
-Or: `No breakpoints in project found`
-Or: `No breakpoints in src/Foo.php found`
+Or: `No breakpoints in project`
+Or: `No breakpoints in src/Foo.php`
 Or: `File 'src/nonExistent' not found` (when the file doesn't exist at all)
 
 **Annotations** (only non-default state is shown):
 - `method` — method breakpoint (vs line breakpoint)
-- `vendor` — breakpoint is in a vendor/ directory
+- `library` — breakpoint is in a library/vendor path (detected via `ProjectFileIndex.isInLibrary()`, not string matching)
 - `disabled` — breakpoint is not enabled
 - `condition: expr` — has a condition expression
 - `log: expr` — has a log expression
@@ -200,11 +223,16 @@ Add a line breakpoint.
 - `log_expression` (optional) — expression to evaluate and log when hit
 - `suspend` (optional, default true) — whether to pause execution
 
-**Output**: The created breakpoint. If the line already has breakpoints, lists them grouped:
+**Validation**:
+- Line must be >= 1 (negative and zero are rejected at parse level)
+- Line must not exceed the file's actual line count (prevents ghost breakpoints that never fire)
+- File must exist in the project
+
+**Output**: The created breakpoint. If the line already has breakpoints, lists them with `(multi-breakpoint-line)` hint:
 ```
 #6 src/WorldClass.php:13
 
-src/WorldClass.php:13 also has other breakpoints:
+src/WorldClass.php:13 also has other breakpoints (multi-breakpoint-line):
  - #3 (condition: $foo === '')
  - #4
  - #5 (disabled)
@@ -222,9 +250,12 @@ Modify an existing breakpoint.
 - `log_expression` (optional) — new log expression
 - `suspend` (optional) — true/false
 
+**Validation order**: ID is validated first — if the ID is wrong, the agent gets the not-found error with current breakpoints, regardless of whether change params were provided. Only if the ID is valid does the "no changes specified" check apply. This ensures the agent always gets the most actionable error first.
+
 **Output**: Updated breakpoint in `#ID file:line (annotations)` notation.
-**Not found**: Shows matching breakpoints (substring filter) or full list if no matches.
-**Ambiguous file:line**: Lists all breakpoints at that line with guidance to use #ID.
+**No changes**: Error `No changes specified. Use enabled, condition, log_expression, or suspend to update.`
+**Not found**: Shows all breakpoints in the project (compact index).
+**Ambiguous file:line**: Lists all breakpoints at that line with `(multi-breakpoint-line)` hint and guidance to use #ID.
 
 ---
 
@@ -235,15 +266,17 @@ Remove breakpoint(s). Requires explicit targets — no silent "remove all".
 - `id` (optional) — #ID, file:line, file path, or file substring. Comma-separated for multiple. Accepts `#` prefix. All formats can be mixed in one call.
 - `all` (optional) — set to `true` to remove ALL breakpoints in the project
 
-**Output**: Lists removed breakpoints + remaining count:
+**Output**: Lists removed breakpoints (full detail) + remaining count (compact index):
 ```
 #3 src/WorldClass.php:13 (condition: $foo === '')
 #4 src/WorldClass.php:13
 
-2 breakpoint(s) remaining in project
+2 breakpoint(s) remaining:
+#5 src/index.php:5
+#6 src/index.php:10
 ```
-**Not found**: Shows matching breakpoints (substring filter) or full list if no matches.
-**Ambiguous file:line**: Same as update — lists options with guidance.
+**Not found**: Shows all breakpoints in the project (compact index).
+**Ambiguous file:line**: Same as update — lists options with `(multi-breakpoint-line)` hint and guidance.
 **No params**: Error asking to specify targets or use `all=true`.
 
 ---
@@ -259,7 +292,7 @@ List active debug sessions.
 #12345 "index.php" at src/index.php:15 (active)
 #12346 "test.php" [running]
 ```
-Or: `No active debug sessions`
+Or: `No sessions in project`
 
 ---
 
@@ -270,9 +303,9 @@ Stop debug session(s).
 - `session_id` (optional) — ID of session (with or without `#` prefix). If omitted → stops the active session (or first on the stack).
 - `all` (optional) — true to stop all sessions
 
-**Output**: Stopped session in `#ID "name" [stopped]` notation. If other sessions remain, lists them with count.
-**Not found**: Shows the requested ID + list of active sessions (or "no active debug sessions").
-**No sessions**: `No active debug sessions` (error state).
+**Output**: Stopped session in `#ID "name" at file:line` notation. If other sessions remain, lists them with count.
+**Not found (specific ID)**: Error — shows the requested ID + list of active sessions.
+**No sessions (no ID or all=true)**: `No sessions in project` — this is `ok`, not an error. Stopping nothing is a no-op, not a failure. Only specifying a non-existent ID is an error.
 
 ---
 
@@ -428,7 +461,7 @@ Every tool declares MCP `ToolAnnotations` to signal its behavior to the client. 
 
 PhpStorm maintains an **active session** — the one currently selected in the debug tab. All session-scoped tools default to the active session (or first on the stack if no active session):
 
-- **0 sessions**: Error "No active debug sessions"
+- **0 sessions**: `No sessions in project` (ok for implicit stop, error for explicit ID)
 - **1 session**: That session is always active
 - **N sessions**: The active session is used by default. Agent can switch by passing a different `session_id`.
 
@@ -468,3 +501,5 @@ This matters for token efficiency — if the agent is stepping through 10 lines,
 - Navigation tools are **async by nature**: they trigger an action in PhpStorm, then wait for the debugger to pause. The MCP response returns only when paused (or timed out / session ended).
 - All tools run their IDE operations on EDT (Event Dispatch Thread) as required by IntelliJ, but the MCP request handling itself is on a background thread.
 - Variable preview generation should be smart: truncate long strings, limit array previews, show class names for objects.
+- **Library detection** uses `ProjectFileIndex.isInLibrary()` — the platform API that respects the project's actual library root configuration, not string matching on path names like `vendor/`.
+- **Line validation** on `breakpoint_add` uses `FileDocumentManager` to get the actual line count and reject out-of-bounds lines. PhpStorm's internal `XBreakpointManager.addLineBreakpoint()` doesn't validate this (we bypass the GUI guards), so the tool must do it.

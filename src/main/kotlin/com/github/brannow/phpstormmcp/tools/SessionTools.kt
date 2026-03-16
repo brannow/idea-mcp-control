@@ -30,13 +30,18 @@ internal fun handleSessionStop(service: SessionService, sessionId: String?, all:
         }
     }
 
+    // No explicit ID → stop the active/first session (no-op if none exist)
+    if (sessionId == null) {
+        val sessions = service.listSessions()
+        if (sessions.isEmpty()) return ok("No sessions in project")
+    }
+
     val info = service.stopSmart(sessionId)
     val remaining = service.listSessions()
     return if (remaining.isEmpty()) {
         ok(formatSession(info))
     } else {
         ok("${formatSession(info)}\n\n${remaining.size} session(s) remaining:\n${formatSessionList(remaining)}")
-
     }
 }
 

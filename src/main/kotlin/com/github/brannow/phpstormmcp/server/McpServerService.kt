@@ -57,9 +57,6 @@ class McpServerService(private val project: Project) : Disposable {
     val isRunning: Boolean
         get() = server != null
 
-    val serverPort: Int
-        get() = port
-
     fun start() {
         if (isRunning) return
 
