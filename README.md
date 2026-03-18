@@ -12,7 +12,7 @@
   <a href="https://github.com/brannow/idea-mcp-hub/actions/workflows/test.yml"><img src="https://github.com/brannow/idea-mcp-hub/actions/workflows/test.yml/badge.svg" alt="Test"></a>
   <a href="https://github.com/brannow/idea-mcp-hub/releases/latest"><img src="https://img.shields.io/github/v/release/brannow/idea-mcp-hub?label=release" alt="Release"></a>
   <img src="https://img.shields.io/badge/platform-PhpStorm%202025.3+-purple" alt="Platform">
-  <img src="https://img.shields.io/badge/MCP%20tools-13-blue" alt="MCP Tools">
+  <img src="https://img.shields.io/badge/MCP%20tools-14-blue" alt="MCP Tools">
   <a href="https://github.com/brannow/idea-mcp-hub/blob/main/LICENSE"><img src="https://img.shields.io/github/license/brannow/idea-mcp-hub" alt="License"></a>
 </p>
 
@@ -46,7 +46,7 @@ If the port is already in use (e.g., another PhpStorm instance), you get a notif
 
 ## Tools
 
-13 tools across 4 categories. All debug tools operate on the active session. Use `session_activate` to switch.
+14 tools across 4 categories. All debug tools operate on the active session. Use `session_activate` to switch.
 
 ### Breakpoints (work without a debug session)
 
@@ -80,6 +80,7 @@ If the port is already in use (e.g., another PhpStorm instance), you get a notif
 | `debug_variable_detail` | Expand variables to any depth with circular reference detection |
 | `debug_inspect_frame` | Switch to a different stack frame and inspect its scope |
 | `debug_evaluate` | Evaluate PHP expressions in debug context, including side effects |
+| `debug_console` | Read stdout/stderr from the debug console (works with Docker/remote processes) |
 
 ## How it works
 
