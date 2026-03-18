@@ -1,13 +1,21 @@
 package com.github.brannow.phpstormmcp.server
 
+import com.github.brannow.phpstormmcp.settings.McpSettings
+import com.github.brannow.phpstormmcp.settings.McpSettingsConfigurable
 import com.github.brannow.phpstormmcp.statusbar.McpServerState
 import com.github.brannow.phpstormmcp.tools.registerBreakpointTools
 import com.github.brannow.phpstormmcp.tools.registerDebugTools
 import com.github.brannow.phpstormmcp.tools.registerNavigationTools
 import com.github.brannow.phpstormmcp.tools.registerSessionTools
+import com.intellij.notification.NotificationGroupManager
+import com.intellij.notification.NotificationType
 import com.intellij.openapi.Disposable
+import com.intellij.openapi.actionSystem.AnAction
+import com.intellij.openapi.actionSystem.AnActionEvent
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.options.ShowSettingsUtil
 import io.ktor.http.HttpStatusCode
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.application.ApplicationCall
@@ -36,7 +44,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
-import java.net.ServerSocket
 
 private const val MCP_SESSION_ID_HEADER = "mcp-session-id"
 
@@ -49,8 +56,6 @@ class McpServerService(private val project: Project) : Disposable {
     private val transports = ConcurrentMap<String, StreamableHttpServerTransport>()
 
     companion object {
-        const val DEFAULT_PORT = 6969
-
         fun getInstance(project: Project): McpServerService {
             return project.getService(McpServerService::class.java)
         }
@@ -62,7 +67,8 @@ class McpServerService(private val project: Project) : Disposable {
     fun start() {
         if (isRunning) return
 
-        port = resolvePort()
+        val settings = McpSettings.getInstance(project)
+        port = settings.port
         val state = McpServerState.getInstance(project)
 
         server = embeddedServer(CIO, host = "127.0.0.1", port = port) {
@@ -92,10 +98,23 @@ class McpServerService(private val project: Project) : Disposable {
         }
 
         scope.launch {
-            server?.start(wait = false)
-        }
+            try {
+                server?.start(wait = false)
+            } catch (e: Exception) {
+                // Port bind failed — clean up and notify on EDT
+                server = null
+                port = 0
+                ApplicationManager.getApplication().invokeLater {
+                    notifyPortConflict(settings.port, e)
+                }
+                return@launch
+            }
 
-        state.start(project, "HTTP :$port")
+            // Only mark as started after successful bind
+            ApplicationManager.getApplication().invokeLater {
+                state.start("HTTP :$port")
+            }
+        }
     }
 
     fun stop() {
@@ -103,12 +122,37 @@ class McpServerService(private val project: Project) : Disposable {
         server?.stop(500, 1000)
         server = null
         port = 0
-        McpServerState.getInstance(project).stop(project)
+        McpServerState.getInstance(project).stop()
     }
 
     override fun dispose() {
         stop()
         scope.cancel()
+    }
+
+    private fun notifyPortConflict(port: Int, cause: Exception) {
+        val notification = NotificationGroupManager.getInstance()
+            .getNotificationGroup("MCP Hub")
+            .createNotification(
+                "MCP Server: Port $port is already in use",
+                "Another PhpStorm instance or process may be using it.",
+                NotificationType.ERROR
+            )
+        notification.addAction(object : AnAction("Change Port") {
+            override fun actionPerformed(e: AnActionEvent) {
+                notification.expire()
+                ShowSettingsUtil.getInstance().showSettingsDialog(
+                    project, McpSettingsConfigurable::class.java
+                )
+            }
+        })
+        notification.addAction(object : AnAction("Retry") {
+            override fun actionPerformed(e: AnActionEvent) {
+                notification.expire()
+                start()
+            }
+        })
+        notification.notify(project)
     }
 
     private suspend fun findTransport(call: ApplicationCall): StreamableHttpServerTransport? {
@@ -142,12 +186,12 @@ class McpServerService(private val project: Project) : Disposable {
 
         transport.setOnSessionInitialized { initializedSessionId ->
             transports[initializedSessionId] = transport
-            state.clientConnected(project)
+            state.clientConnected()
         }
 
         transport.setOnSessionClosed { closedSessionId ->
             transports.remove(closedSessionId)
-            state.clientDisconnected(project)
+            state.clientDisconnected()
         }
 
         val mcpServer = createMcpServer()
@@ -162,7 +206,7 @@ class McpServerService(private val project: Project) : Disposable {
     private fun createMcpServer(): Server {
         return Server(
             serverInfo = Implementation(
-                name = "phpstorm-mcp",
+                name = "mcp-hub",
                 version = "0.1.0"
             ),
             options = ServerOptions(
@@ -175,22 +219,6 @@ class McpServerService(private val project: Project) : Disposable {
             registerSessionTools(project)
             registerDebugTools(project)
             registerNavigationTools(project)
-        }
-    }
-
-    private fun resolvePort(): Int {
-        return if (isPortAvailable(DEFAULT_PORT)) {
-            DEFAULT_PORT
-        } else {
-            ServerSocket(0).use { it.localPort }
-        }
-    }
-
-    private fun isPortAvailable(port: Int): Boolean {
-        return try {
-            ServerSocket(port).use { true }
-        } catch (_: Exception) {
-            false
         }
     }
 }

@@ -1,9 +1,55 @@
 <idea-plugin>
     <id>com.github.brannow.phpstormmcp</id>
-    <name>PhpStorm MCP</name>
-    <vendor>brannow</vendor>
+    <name>MCP Hub</name>
+    <vendor url="https://github.com/brannow/idea-mcp-hub">Benjamin Rannow</vendor>
     <description><![CDATA[
-        MCP server plugin for PhpStorm — exposes IDE debugging features to AI agents.
+        <p>MCP server that gives AI agents access to IDE features they can't get from the command line.</p>
+
+        <p>Agents can read files and run terminals on their own.
+        They can't set breakpoints, step through code, or inspect variables.
+        MCP Hub exposes these IDE-only capabilities as MCP tools.</p>
+
+        <h3>12 tools across 4 categories</h3>
+
+        <b>Breakpoints</b> (work without an active debug session)
+        <ul>
+            <li>list, add, update, remove</li>
+            <li>Conditions, log expressions, suspend control</li>
+        </ul>
+
+        <b>Session management</b>
+        <ul>
+            <li>List active debug sessions, stop one or all</li>
+        </ul>
+
+        <b>Navigation</b> (requires paused session)
+        <ul>
+            <li>Step over / into / out / continue</li>
+            <li>Run to a specific line</li>
+            <li>Every step returns a snapshot: source context, variables, call stack</li>
+        </ul>
+
+        <b>Inspection</b> (requires paused session)
+        <ul>
+            <li>Full debug snapshot (source + variables + stack trace)</li>
+            <li>Expand variables to any depth (circular references detected)</li>
+            <li>Switch stack frames and inspect variables at that scope</li>
+            <li>Evaluate PHP expressions with side effects ($bar = 'new value')</li>
+        </ul>
+
+        <h3>Setup</h3>
+        <ol>
+            <li>Open the MCP Hub tool window (bottom panel)</li>
+            <li>Click "Install .mcp.json" to configure your MCP client</li>
+            <li>Start the server</li>
+        </ol>
+        <p>Works with Claude Code, Cursor, Claude Desktop, and any other MCP client.
+        Configurable port, optional auto-start per project.</p>
+
+        <h3>How debugging works</h3>
+        <p>You start debug sessions in PhpStorm as usual. The agent interacts with them
+        through MCP tools: setting breakpoints, stepping through code, inspecting state.
+        You both see the same debug session. Pair debugging with an AI.</p>
     ]]></description>
 
     <depends>com.intellij.modules.platform</depends>
@@ -12,11 +58,20 @@
 
     <extensions defaultExtensionNs="com.intellij">
         <notificationGroup
-            id="PhpStorm MCP"
+            id="MCP Hub"
             displayType="BALLOON"/>
-        <statusBarWidgetFactory
-            id="McpStatusWidget"
-            implementation="com.github.brannow.phpstormmcp.statusbar.McpStatusWidgetFactory"
-            order="after Encoding"/>
+        <projectConfigurable
+            groupId="tools"
+            instance="com.github.brannow.phpstormmcp.settings.McpSettingsConfigurable"
+            id="com.github.brannow.phpstormmcp.settings"
+            displayName="MCP Hub"
+            nonDefaultProject="true"/>
+        <toolWindow
+            id="MCP Hub"
+            anchor="bottom"
+            icon="/icons/mcpStatusInactive.svg"
+            factoryClass="com.github.brannow.phpstormmcp.toolwindow.McpToolWindowFactory"/>
+        <postStartupActivity
+            implementation="com.github.brannow.phpstormmcp.startup.McpAutoStartActivity"/>
     </extensions>
 </idea-plugin>

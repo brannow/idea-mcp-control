@@ -1,11 +1,11 @@
 package com.github.brannow.phpstormmcp.statusbar
 
+import com.github.brannow.phpstormmcp.McpServerStateListener
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.project.Project
-import com.intellij.openapi.wm.StatusBar
-import com.intellij.openapi.wm.WindowManager
+
 @Service(Service.Level.PROJECT)
-class McpServerState {
+class McpServerState(private val project: Project) {
 
     enum class Status {
         STOPPED,
@@ -15,41 +15,43 @@ class McpServerState {
     var status: Status = Status.STOPPED
         private set
 
-    var transport: String = "Not configured"
+    var transport: String = ""
         private set
 
     var connectedClients: Int = 0
         private set
 
-    fun start(project: Project, transport: String) {
+    val isRunning: Boolean
+        get() = status == Status.RUNNING
+
+    fun start(transport: String) {
         this.status = Status.RUNNING
         this.transport = transport
         McpActivityLog.getInstance(project).log("MCP server started ($transport)")
-        updateWidget(project)
+        notifyStateChanged()
     }
 
-    fun stop(project: Project) {
+    fun stop() {
         this.status = Status.STOPPED
         this.connectedClients = 0
         McpActivityLog.getInstance(project).log("MCP server stopped")
-        updateWidget(project)
+        notifyStateChanged()
     }
 
-    fun clientConnected(project: Project) {
+    fun clientConnected() {
         connectedClients++
         McpActivityLog.getInstance(project).log("Client connected (total: $connectedClients)")
-        updateWidget(project)
+        notifyStateChanged()
     }
 
-    fun clientDisconnected(project: Project) {
+    fun clientDisconnected() {
         connectedClients = (connectedClients - 1).coerceAtLeast(0)
         McpActivityLog.getInstance(project).log("Client disconnected (total: $connectedClients)")
-        updateWidget(project)
+        notifyStateChanged()
     }
 
-    private fun updateWidget(project: Project) {
-        val statusBar: StatusBar? = WindowManager.getInstance().getStatusBar(project)
-        statusBar?.updateWidget(McpStatusWidgetFactory.WIDGET_ID)
+    private fun notifyStateChanged() {
+        project.messageBus.syncPublisher(McpServerStateListener.TOPIC).stateChanged()
     }
 
     companion object {

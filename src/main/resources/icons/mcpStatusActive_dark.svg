@@ -1,14 +1,15 @@
-<svg width="13" height="13" viewBox="0 0 13 13" xmlns="http://www.w3.org/2000/svg">
-    <!-- graph edges -->
-    <line x1="6.5" y1="6.5" x2="3" y2="3" stroke="#A78BFA" stroke-width="1.5"/>
-    <line x1="6.5" y1="6.5" x2="10.5" y2="4" stroke="#A78BFA" stroke-width="1.5"/>
-    <line x1="6.5" y1="6.5" x2="10" y2="10.5" stroke="#A78BFA" stroke-width="1.5"/>
-    <line x1="6.5" y1="6.5" x2="2.5" y2="9" stroke="#A78BFA" stroke-width="1.5"/>
-    <!-- outer nodes -->
-    <circle cx="3" cy="3" r="1.8" fill="#A78BFA"/>
-    <circle cx="10.5" cy="4" r="1.8" fill="#A78BFA"/>
-    <circle cx="10" cy="10.5" r="1.8" fill="#A78BFA"/>
-    <circle cx="2.5" cy="9" r="1.8" fill="#A78BFA"/>
-    <!-- center node -->
-    <circle cx="6.5" cy="6.5" r="1.8" fill="#F08A24"/>
+<svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- MCP hub-and-spoke: center node connected to 4 outer nodes -->
+  <!-- Edges -->
+  <line x1="8" y1="8" x2="3.5" y2="3.5" stroke="#CED0D6" stroke-linecap="round"/>
+  <line x1="8" y1="8" x2="12.5" y2="3.5" stroke="#CED0D6" stroke-linecap="round"/>
+  <line x1="8" y1="8" x2="12.5" y2="12.5" stroke="#CED0D6" stroke-linecap="round"/>
+  <line x1="8" y1="8" x2="3.5" y2="12.5" stroke="#CED0D6" stroke-linecap="round"/>
+  <!-- Outer nodes -->
+  <circle cx="3.5" cy="3.5" r="1.5" stroke="#CED0D6" fill="none"/>
+  <circle cx="12.5" cy="3.5" r="1.5" stroke="#CED0D6" fill="none"/>
+  <circle cx="12.5" cy="12.5" r="1.5" stroke="#CED0D6" fill="none"/>
+  <circle cx="3.5" cy="12.5" r="1.5" stroke="#CED0D6" fill="none"/>
+  <!-- Center node (filled to distinguish hub) -->
+  <circle cx="8" cy="8" r="1.8" fill="#CED0D6"/>
 </svg>

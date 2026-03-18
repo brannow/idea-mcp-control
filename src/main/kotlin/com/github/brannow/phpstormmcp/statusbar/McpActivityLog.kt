@@ -1,5 +1,6 @@
 package com.github.brannow.phpstormmcp.statusbar
 
+import com.github.brannow.phpstormmcp.McpServerStateListener
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.project.Project
 import java.time.LocalTime
@@ -7,7 +8,7 @@ import java.time.format.DateTimeFormatter
 import java.util.concurrent.CopyOnWriteArrayList
 
 @Service(Service.Level.PROJECT)
-class McpActivityLog {
+class McpActivityLog(private val project: Project) {
 
     data class Entry(
         val timestamp: String,
@@ -21,14 +22,23 @@ class McpActivityLog {
     fun log(message: String) {
         val timestamp = LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss"))
         entries.add(Entry(timestamp, message))
-        // Keep only the last 50 entries
         while (entries.size > MAX_ENTRIES) {
             entries.removeAt(0)
         }
+        notifyLogUpdated()
+    }
+
+    fun clear() {
+        entries.clear()
+        notifyLogUpdated()
+    }
+
+    private fun notifyLogUpdated() {
+        project.messageBus.syncPublisher(McpServerStateListener.TOPIC).logUpdated()
     }
 
     companion object {
-        private const val MAX_ENTRIES = 50
+        private const val MAX_ENTRIES = 500
 
         fun getInstance(project: Project): McpActivityLog {
             return project.getService(McpActivityLog::class.java)

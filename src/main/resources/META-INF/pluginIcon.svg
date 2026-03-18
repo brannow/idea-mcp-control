@@ -1,21 +1,16 @@
 <svg width="40" height="40" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">
-
-    <!-- background (light theme: light gray) -->
-    <rect x="2" y="2" width="36" height="36" rx="8" fill="#F0F0F0"/>
-
-    <!-- graph edges -->
-    <line x1="20" y1="20" x2="12" y2="12" stroke="#7C3AED" stroke-width="2"/>
-    <line x1="20" y1="20" x2="30" y2="14" stroke="#7C3AED" stroke-width="2"/>
-    <line x1="20" y1="20" x2="28" y2="30" stroke="#7C3AED" stroke-width="2"/>
-    <line x1="20" y1="20" x2="10" y2="26" stroke="#7C3AED" stroke-width="2"/>
-
-    <!-- MCP / AI nodes -->
-    <circle cx="12" cy="12" r="3" fill="#7C3AED"/>
-    <circle cx="30" cy="14" r="3" fill="#7C3AED"/>
-    <circle cx="28" cy="30" r="3" fill="#7C3AED"/>
-    <circle cx="10" cy="26" r="3" fill="#7C3AED"/>
-
-    <!-- breakpoint / runtime node -->
-    <circle cx="20" cy="20" r="3" fill="#F08A24"/>
-
+  <!-- MCP Hub: hub-and-spoke network on a rounded background -->
+  <rect x="2" y="2" width="36" height="36" rx="8" fill="#F5F5F5"/>
+  <!-- Edges -->
+  <line x1="20" y1="20" x2="10" y2="10" stroke="#6C707E" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="20" y1="20" x2="30" y2="10" stroke="#6C707E" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="20" y1="20" x2="30" y2="30" stroke="#6C707E" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="20" y1="20" x2="10" y2="30" stroke="#6C707E" stroke-width="1.5" stroke-linecap="round"/>
+  <!-- Outer nodes (stroke only) -->
+  <circle cx="10" cy="10" r="3.5" stroke="#6C707E" stroke-width="1.5" fill="#F5F5F5"/>
+  <circle cx="30" cy="10" r="3.5" stroke="#6C707E" stroke-width="1.5" fill="#F5F5F5"/>
+  <circle cx="30" cy="30" r="3.5" stroke="#6C707E" stroke-width="1.5" fill="#F5F5F5"/>
+  <circle cx="10" cy="30" r="3.5" stroke="#6C707E" stroke-width="1.5" fill="#F5F5F5"/>
+  <!-- Center hub (filled, accent color from IntelliJ action palette) -->
+  <circle cx="20" cy="20" r="4" fill="#6C707E"/>
 </svg>
