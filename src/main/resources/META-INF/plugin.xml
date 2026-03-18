@@ -2,6 +2,20 @@
     <id>com.github.brannow.phpstormmcp</id>
     <name>MCP Hub</name>
     <vendor url="https://github.com/brannow/idea-mcp-hub">Benjamin Rannow</vendor>
+    <change-notes><![CDATA[
+        <b>0.1.1</b>
+        <ul>
+            <li>Fix: Settings page now visible under Settings > Tools > MCP Hub</li>
+        </ul>
+        <b>0.1.0</b>
+        <ul>
+            <li>Initial release</li>
+            <li>12 MCP tools: breakpoints, sessions, navigation, inspection</li>
+            <li>Tool window with activity log, start/stop, settings</li>
+            <li>One-click .mcp.json installation</li>
+            <li>Configurable port and auto-start per project</li>
+        </ul>
+    ]]></change-notes>
     <description><![CDATA[
         <p>MCP server that gives AI agents access to IDE features they can't get from the command line.</p>
 
@@ -61,7 +75,7 @@
             id="MCP Hub"
             displayType="BALLOON"/>
         <projectConfigurable
-            groupId="tools"
+            parentId="tools"
             instance="com.github.brannow.phpstormmcp.settings.McpSettingsConfigurable"
             id="com.github.brannow.phpstormmcp.settings"
             displayName="MCP Hub"
