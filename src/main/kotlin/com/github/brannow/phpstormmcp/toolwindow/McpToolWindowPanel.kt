@@ -219,6 +219,7 @@ private class InstallMcpAction(private val project: Project) :
             ?.jsonObject?.toMutableMap() ?: mutableMapOf()
 
         existingServers[serverKey] = buildJsonObject {
+            put("type", "http")
             put("url", serverUrl)
         }
 

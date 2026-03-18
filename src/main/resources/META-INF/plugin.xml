@@ -3,6 +3,10 @@
     <name>MCP Hub</name>
     <vendor url="https://github.com/brannow/idea-mcp-hub">Benjamin Rannow</vendor>
     <change-notes><![CDATA[
+        <b>0.3.1</b>
+        <ul>
+            <li>Fix: .mcp.json installer now includes required "type": "http" field</li>
+        </ul>
         <b>0.3.0</b>
         <ul>
             <li>New tool: debug_console — read stdout/stderr from the debug session's console (useful for Docker/remote PHP processes)</li>
