@@ -85,7 +85,7 @@ internal fun buildSnapshotFromResult(
 }
 
 /**
- * Parse include/globals/session_id from request arguments.
+ * Parse include/globals from request arguments.
  */
 private data class SnapshotParams(
     val includeSource: Boolean,
@@ -109,10 +109,6 @@ private fun parseSnapshotParams(arguments: JsonObject?): SnapshotParams {
 }
 
 private fun JsonObjectBuilder.putSnapshotParams() {
-    putJsonObject("session_id") {
-        put("type", "string")
-        put("description", "ID of the debug session (from session_list). Omit to use the active session.")
-    }
     putJsonObject("include") {
         put("type", "array")
         put("description", "Parts to include: \"source\", \"variables\", \"stacktrace\". " +
@@ -168,8 +164,7 @@ fun Server.registerNavigationTools(project: Project) {
         try {
             if (action == null) return@addTool err("Missing required parameter: action")
 
-            val sessionId = request.arguments?.get("session_id")?.jsonPrimitive?.content
-            val (session, error) = resolvePausedSession(project, sessionId)
+            val (session, error) = resolvePausedSession(project)
             if (error != null) return@addTool error
 
             val params = parseSnapshotParams(request.arguments)
@@ -213,8 +208,7 @@ fun Server.registerNavigationTools(project: Project) {
             val location = request.arguments?.get("location")?.jsonPrimitive?.content
                 ?: return@addTool err("Missing required parameter: location")
 
-            val sessionId = request.arguments?.get("session_id")?.jsonPrimitive?.content
-            val (session, error) = resolvePausedSession(project, sessionId)
+            val (session, error) = resolvePausedSession(project)
             if (error != null) return@addTool error
 
             val parts = location.split(":")

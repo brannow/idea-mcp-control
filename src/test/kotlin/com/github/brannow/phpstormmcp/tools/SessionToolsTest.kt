@@ -36,14 +36,22 @@ class SessionToolsTest {
     data class StopCase(
         val name: String,
         val sessions: List<SessionState>,
-        val sessionId: String? = null,
         val all: Boolean = false,
+        val expectedOutput: String,
+        val isError: Boolean = false,
+    )
+
+    data class ActivateCase(
+        val name: String,
+        val sessions: List<SessionState>,
+        val sessionId: String,
         val expectedOutput: String,
         val isError: Boolean = false,
     )
 
     private fun buildService(sessions: List<SessionState>): SessionService {
         val mockSessions = mutableMapOf<SessionState, XDebugSession>()
+        var activeSessionRef: XDebugSession? = null
 
         for (state in sessions) {
             val session = mockk<XDebugSession>(relaxed = true)
@@ -67,11 +75,11 @@ class SessionToolsTest {
             mockSessions[state] = session
         }
 
-        val activeSession = sessions.firstOrNull { it.active }?.let { mockSessions[it] }
+        activeSessionRef = sessions.firstOrNull { it.active }?.let { mockSessions[it] }
 
         val manager = mockk<XDebuggerManager>()
         every { manager.debugSessions } returns mockSessions.values.toTypedArray()
-        every { manager.currentSession } returns activeSession
+        every { manager.currentSession } answers { activeSessionRef }
 
         val project = mockk<Project>()
         every { project.basePath } returns "/project"
@@ -82,7 +90,13 @@ class SessionToolsTest {
             override fun sessionId(session: XDebugSession) =
                 mockSessions.entries.first { it.value === session }.key.id
             override fun <T> readAction(action: () -> T): T = action()
-            override fun runOnEdt(action: () -> Unit) = action()
+            override fun runOnEdt(action: () -> Unit) {
+                // For activate tests: simulate switching active session
+                activeSessionRef = mockSessions.entries
+                    .firstOrNull { entry -> mockSessions.values.any { it === entry.value } }
+                    ?.let { /* keep current for now */ activeSessionRef }
+                action()
+            }
         }
         return service
     }
@@ -112,11 +126,28 @@ class SessionToolsTest {
     fun session_stop(case: StopCase) {
         val service = buildService(case.sessions)
         try {
-            val result = handleSessionStop(service, case.sessionId, case.all)
+            val result = handleSessionStop(service, case.all)
+            assertEquals(case.expectedOutput, resultText(result))
+            assertEquals(case.isError, result.isError ?: false)
+        } catch (e: Exception) {
+            assertEquals(case.expectedOutput, e.message ?: "Unknown error")
+            assertEquals(true, case.isError)
+        }
+    }
+
+    // ========================================================================
+    // session_activate
+    // ========================================================================
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("sessionActivateCases")
+    fun session_activate(case: ActivateCase) {
+        val service = buildService(case.sessions)
+        try {
+            val result = handleSessionActivate(service, case.sessionId)
             assertEquals(case.expectedOutput, resultText(result))
             assertEquals(case.isError, result.isError ?: false)
         } catch (e: SessionNotFoundException) {
-            // Mirror the handler's catch logic
             val output = if (e.activeSessions.isEmpty()) {
                 "Session '${e.requestedId}' not found, no sessions in project"
             } else {
@@ -178,56 +209,24 @@ class SessionToolsTest {
         @JvmStatic
         fun sessionStopCases() = listOf(
             StopCase(
-                name = "no params, no sessions",
+                name = "no sessions",
                 sessions = emptyList(),
                 expectedOutput = "No sessions in project",
             ),
             StopCase(
-                name = "no params, one session → stops it",
+                name = "one session → stops it",
                 sessions = listOf(
                     SessionState("111", "index.php", suspended = true, file = "src/index.php", line = 5, active = true)
                 ),
                 expectedOutput = "#111 \"index.php\" [stopped] at src/index.php:5",
             ),
             StopCase(
-                name = "no params, multiple sessions → stops active",
+                name = "multiple sessions → stops active",
                 sessions = listOf(
                     SessionState("111", "index.php", suspended = true, file = "src/index.php", line = 5, active = true),
                     SessionState("222", "test.php", suspended = true, file = "src/test.php", line = 10, active = false),
                 ),
                 expectedOutput = "#111 \"index.php\" [stopped] at src/index.php:5\n\n1 session(s) remaining:\n#222 \"test.php\" at src/test.php:10",
-            ),
-            StopCase(
-                name = "by ID",
-                sessions = listOf(
-                    SessionState("111", "index.php", suspended = true, file = "src/index.php", line = 5, active = true)
-                ),
-                sessionId = "111",
-                expectedOutput = "#111 \"index.php\" [stopped] at src/index.php:5",
-            ),
-            StopCase(
-                name = "by ID with hash prefix",
-                sessions = listOf(
-                    SessionState("111", "index.php", suspended = true, file = "src/index.php", line = 5, active = true)
-                ),
-                sessionId = "#111",
-                expectedOutput = "#111 \"index.php\" [stopped] at src/index.php:5",
-            ),
-            StopCase(
-                name = "not found ID, has active sessions",
-                sessions = listOf(
-                    SessionState("111", "index.php", suspended = true, file = "src/index.php", line = 5, active = true)
-                ),
-                sessionId = "999",
-                expectedOutput = "Session '999' not found, current sessions:\n\n#111 \"index.php\" at src/index.php:5 (active)",
-                isError = true,
-            ),
-            StopCase(
-                name = "not found ID, no sessions",
-                sessions = emptyList(),
-                sessionId = "999",
-                expectedOutput = "Session '999' not found, no sessions in project",
-                isError = true,
             ),
             StopCase(
                 name = "all=true, no sessions",
@@ -243,6 +242,44 @@ class SessionToolsTest {
                 ),
                 all = true,
                 expectedOutput = "#111 \"index.php\" [stopped] at src/index.php:5\n#222 \"test.php\" [stopped] at src/test.php:10",
+            ),
+        )
+
+        // -- session_activate cases --
+
+        @JvmStatic
+        fun sessionActivateCases() = listOf(
+            ActivateCase(
+                name = "activate single session",
+                sessions = listOf(
+                    SessionState("111", "index.php", suspended = true, file = "src/index.php", line = 5, active = true)
+                ),
+                sessionId = "111",
+                expectedOutput = "#111 \"index.php\" at src/index.php:5 (active)",
+            ),
+            ActivateCase(
+                name = "activate with hash prefix",
+                sessions = listOf(
+                    SessionState("111", "index.php", suspended = true, file = "src/index.php", line = 5, active = true)
+                ),
+                sessionId = "#111",
+                expectedOutput = "#111 \"index.php\" at src/index.php:5 (active)",
+            ),
+            ActivateCase(
+                name = "not found",
+                sessions = listOf(
+                    SessionState("111", "index.php", suspended = true, file = "src/index.php", line = 5, active = true)
+                ),
+                sessionId = "999",
+                expectedOutput = "Session '999' not found, current sessions:\n\n#111 \"index.php\" at src/index.php:5 (active)",
+                isError = true,
+            ),
+            ActivateCase(
+                name = "not found, no sessions",
+                sessions = emptyList(),
+                sessionId = "999",
+                expectedOutput = "Session '999' not found, no sessions in project",
+                isError = true,
             ),
         )
     }

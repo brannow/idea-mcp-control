@@ -203,11 +203,17 @@ class McpServerService(private val project: Project) : Disposable {
         return transport
     }
 
+    private fun pluginVersion(): String {
+        return com.intellij.ide.plugins.PluginManagerCore.getPlugin(
+            com.intellij.openapi.extensions.PluginId.getId("com.github.brannow.phpstormmcp")
+        )?.version ?: "unknown"
+    }
+
     private fun createMcpServer(): Server {
         return Server(
             serverInfo = Implementation(
                 name = "mcp-hub",
-                version = "0.1.0"
+                version = pluginVersion()
             ),
             options = ServerOptions(
                 capabilities = ServerCapabilities(

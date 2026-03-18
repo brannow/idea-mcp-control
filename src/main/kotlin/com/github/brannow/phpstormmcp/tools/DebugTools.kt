@@ -12,23 +12,90 @@ import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
 import kotlinx.serialization.json.*
 
 /**
- * Resolve a paused debug session, or return an error result.
+ * Tracks which session the agent is working with.
+ * Detects when the active session changes externally (e.g., user clicks a different debug tab)
+ * and blocks the next tool call with an alert instead of silently operating on the wrong session.
+ *
+ * Updated by: resolvePausedSession (on success), session_activate (explicit switch)
+ * Cleared by: session_stop, session ended
  */
-internal fun resolvePausedSession(project: Project, sessionId: String?): Pair<XDebugSession?, CallToolResult?> {
-    val manager = XDebuggerManager.getInstance(project)
+internal object AgentSessionTracker {
+    @Volatile
+    var lastSessionId: String? = null
 
-    val session = if (sessionId != null) {
-        val cleanId = sessionId.trimStart('#').trim()
-        manager.debugSessions.firstOrNull {
-            System.identityHashCode(it).toString() == cleanId
-        } ?: return null to err("Session '#$cleanId' not found")
-    } else {
-        manager.currentSession ?: return null to err("No active debug session")
+    fun track(session: XDebugSession) {
+        lastSessionId = System.identityHashCode(session).toString()
     }
 
-    if (session.isStopped) return null to err("Session has ended")
+    fun trackById(sessionId: String) {
+        lastSessionId = sessionId
+    }
+
+    fun clear() {
+        lastSessionId = null
+    }
+
+    /**
+     * Check if the active session changed unexpectedly.
+     * Returns null if everything is fine, or an error message if the session switched.
+     *
+     * @param currentSessionId the ID of the current active session
+     * @param currentSessionName the name of the current active session
+     * @param previousSessionStatus a lambda that resolves the status of the previous session:
+     *        "terminated", "paused, now inactive", or "running, now inactive"
+     */
+    fun checkSessionSwitch(
+        currentSessionId: String,
+        currentSessionName: String,
+        previousSessionStatus: (lastId: String) -> String
+    ): String? {
+        val lastId = lastSessionId ?: return null
+        if (lastId == currentSessionId) return null
+
+        val status = previousSessionStatus(lastId)
+        return "Active session changed unexpectedly.\n" +
+            "Previous session #$lastId ($status).\n" +
+            "Now on #$currentSessionId \"$currentSessionName\".\n\n" +
+            "Use session_activate to confirm the switch, or session_list to see all sessions."
+    }
+}
+
+/**
+ * Resolve the active paused debug session, or return an error result.
+ * Always uses the current (active) session. Use session_activate to switch sessions.
+ *
+ * If the active session changed externally (user switched tabs), blocks with an alert
+ * and requires the agent to call session_activate or session_list to re-orient.
+ */
+internal fun resolvePausedSession(project: Project): Pair<XDebugSession?, CallToolResult?> {
+    val manager = XDebuggerManager.getInstance(project)
+    val session = manager.currentSession ?: return null to err("No active debug session")
+
+    if (session.isStopped) {
+        AgentSessionTracker.clear()
+        return null to err("Session has ended")
+    }
     if (!session.isSuspended) return null to err("Session is running — not paused at a breakpoint")
 
+    // Check for unexpected session switch
+    val currentId = System.identityHashCode(session).toString()
+    val switchError = AgentSessionTracker.checkSessionSwitch(
+        currentSessionId = currentId,
+        currentSessionName = session.sessionName
+    ) { lastId ->
+        val previousSession = manager.debugSessions.firstOrNull {
+            System.identityHashCode(it).toString() == lastId
+        }
+        when {
+            previousSession == null -> "terminated"
+            previousSession.isStopped -> "terminated"
+            previousSession.isSuspended -> "paused, now inactive"
+            else -> "running, now inactive"
+        }
+    }
+    if (switchError != null) return null to err(switchError)
+
+    AgentSessionTracker.track(session)
     return session to null
 }
 
@@ -101,10 +168,6 @@ fun Server.registerDebugTools(project: Project) {
                     put("type", "boolean")
                     put("description", "Include PHP superglobals (\$_SERVER, \$_ENV, etc.). Default: false. Only applies when no path is specified.")
                 }
-                putJsonObject("session_id") {
-                    put("type", "string")
-                    put("description", "ID of the debug session (from session_list). Omit to use the active session.")
-                }
             },
             required = emptyList()
         )
@@ -114,8 +177,7 @@ fun Server.registerDebugTools(project: Project) {
             val path = request.arguments?.get("path")?.jsonPrimitive?.content
             val depth = request.arguments?.get("depth")?.jsonPrimitive?.intOrNull ?: 1
             val includeGlobals = request.arguments?.get("globals")?.jsonPrimitive?.booleanOrNull ?: false
-            val sessionId = request.arguments?.get("session_id")?.jsonPrimitive?.content
-            val (session, error) = resolvePausedSession(project, sessionId)
+            val (session, error) = resolvePausedSession(project)
             if (error != null) return@addTool error
 
             val suspendContext = session!!.suspendContext
@@ -179,10 +241,6 @@ fun Server.registerDebugTools(project: Project) {
                     put("type", "boolean")
                     put("description", "Include PHP superglobals in variables. Default: false.")
                 }
-                putJsonObject("session_id") {
-                    put("type", "string")
-                    put("description", "ID of the debug session (from session_list). Omit to use the active session.")
-                }
             },
             required = listOf("frame_index")
         )
@@ -193,8 +251,7 @@ fun Server.registerDebugTools(project: Project) {
                 ?: return@addTool err("Missing required parameter: frame_index")
             if (frameIndex < 0) return@addTool err("frame_index must be >= 0")
 
-            val sessionId = request.arguments?.get("session_id")?.jsonPrimitive?.content
-            val (session, error) = resolvePausedSession(project, sessionId)
+            val (session, error) = resolvePausedSession(project)
             if (error != null) return@addTool error
 
             val suspendContext = session!!.suspendContext
@@ -265,10 +322,6 @@ fun Server.registerDebugTools(project: Project) {
                     put("description", "Expansion depth for object/array results. Default: 1 (shows immediate properties). " +
                             "Use 0 for just type and value, 2+ for deeper nesting.")
                 }
-                putJsonObject("session_id") {
-                    put("type", "string")
-                    put("description", "ID of the debug session (from session_list). Omit to use the active session.")
-                }
             },
             required = listOf("expression")
         )
@@ -278,8 +331,7 @@ fun Server.registerDebugTools(project: Project) {
             val expression = request.arguments?.get("expression")?.jsonPrimitive?.content
                 ?: return@addTool err("Missing required parameter: expression")
             val depth = request.arguments?.get("depth")?.jsonPrimitive?.intOrNull ?: 1
-            val sessionId = request.arguments?.get("session_id")?.jsonPrimitive?.content
-            val (session, error) = resolvePausedSession(project, sessionId)
+            val (session, error) = resolvePausedSession(project)
             if (error != null) return@addTool error
 
             val suspendContext = session!!.suspendContext
@@ -318,10 +370,6 @@ fun Server.registerDebugTools(project: Project) {
         toolAnnotations = readOnlyAnnotations,
         inputSchema = ToolSchema(
             properties = buildJsonObject {
-                putJsonObject("session_id") {
-                    put("type", "string")
-                    put("description", "ID of the debug session (from session_list). Omit to use the active session.")
-                }
                 putJsonObject("include") {
                     put("type", "array")
                     put("description", "Parts to include: \"source\", \"variables\", \"stacktrace\". " +
@@ -345,8 +393,7 @@ fun Server.registerDebugTools(project: Project) {
     ) { request ->
         activityLog.log("debug_snapshot")
         try {
-            val sessionId = request.arguments?.get("session_id")?.jsonPrimitive?.content
-            val (session, error) = resolvePausedSession(project, sessionId)
+            val (session, error) = resolvePausedSession(project)
             if (error != null) return@addTool error
 
             val includeParam = request.arguments?.get("include")?.jsonArray

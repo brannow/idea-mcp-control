@@ -3,6 +3,13 @@
     <name>MCP Hub</name>
     <vendor url="https://github.com/brannow/idea-mcp-hub">Benjamin Rannow</vendor>
     <change-notes><![CDATA[
+        <b>0.2.0</b>
+        <ul>
+            <li>New tool: session_activate — switch active debug session (like clicking a debug tab)</li>
+            <li>Removed session_id parameter from all debug tools — simpler API, fewer tokens</li>
+            <li>Session switch detection: agent gets an alert if the user or IDE switches the active session unexpectedly</li>
+            <li>MCP server version now matches the plugin version</li>
+        </ul>
         <b>0.1.1</b>
         <ul>
             <li>Fix: Settings page now visible under Settings > Tools > MCP Hub</li>
@@ -10,7 +17,7 @@
         <b>0.1.0</b>
         <ul>
             <li>Initial release</li>
-            <li>12 MCP tools: breakpoints, sessions, navigation, inspection</li>
+            <li>13 MCP tools: breakpoints, sessions, navigation, inspection</li>
             <li>Tool window with activity log, start/stop, settings</li>
             <li>One-click .mcp.json installation</li>
             <li>Configurable port and auto-start per project</li>
@@ -23,7 +30,7 @@
         They can't set breakpoints, step through code, or inspect variables.
         MCP Hub exposes these IDE-only capabilities as MCP tools.</p>
 
-        <h3>12 tools across 4 categories</h3>
+        <h3>13 tools across 4 categories</h3>
 
         <b>Breakpoints</b> (work without an active debug session)
         <ul>
@@ -34,6 +41,7 @@
         <b>Session management</b>
         <ul>
             <li>List active debug sessions, stop one or all</li>
+            <li>Switch active session (all debug tools operate on the active session)</li>
         </ul>
 
         <b>Navigation</b> (requires paused session)

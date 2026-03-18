@@ -6,6 +6,7 @@ import com.intellij.openapi.components.Service
 import com.intellij.openapi.project.Project
 import com.intellij.xdebugger.XDebugSession
 import com.intellij.xdebugger.XDebuggerManager
+import com.intellij.xdebugger.impl.XDebugSessionImpl
 import java.util.concurrent.CompletableFuture
 
 data class SessionInfo(
@@ -124,6 +125,22 @@ class SessionService(private val project: Project) {
             platform.sessionId(target)
         }
         return stopSession(targetId)
+    }
+
+    fun activateSession(sessionId: String): SessionInfo {
+        val cleanId = sessionId.trimStart('#').trim()
+        val session = platform.readAction {
+            findSessionById(cleanId) ?: throw SessionNotFoundException(cleanId, listSessions())
+        }
+        platform.runOnEdt {
+            if (session is XDebugSessionImpl) {
+                session.activateSession(false)
+            }
+        }
+        return platform.readAction {
+            val manager = platform.getDebuggerManager()
+            toSessionInfo(session, manager.currentSession)
+        }
     }
 
     private fun findSessionById(id: String): XDebugSession? {
