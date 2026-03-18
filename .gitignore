@@ -21,9 +21,13 @@ Thumbs.db
 # Windows batch file (we're on macOS, gradlew is sufficient)
 gradlew.bat
 
-# Reference repositories (cloned, not ours)
-internal/reference-Repository/
+# Internal docs and reference (not shipped)
+internal/
 sandbox/
 
-# Claude private data
+# Project planning (private)
+roadmap.md
+
+# Claude
+.claude/
 .claude-private/
