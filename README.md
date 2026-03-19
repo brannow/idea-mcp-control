@@ -1,7 +1,7 @@
-<h1 align="center">MCP Hub</h1>
+<h1 align="center">MCP Control</h1>
 
 <p align="center">
-  <img src=".github/logo.svg" width="120" height="120" alt="MCP Hub">
+  <img src=".github/logo.svg" width="120" height="120" alt="MCP Control">
 </p>
 
 <p align="center">
@@ -9,11 +9,11 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/brannow/idea-mcp-hub/actions/workflows/test.yml"><img src="https://github.com/brannow/idea-mcp-hub/actions/workflows/test.yml/badge.svg" alt="Test"></a>
-  <a href="https://github.com/brannow/idea-mcp-hub/releases/latest"><img src="https://img.shields.io/github/v/release/brannow/idea-mcp-hub?label=release" alt="Release"></a>
+  <a href="https://github.com/brannow/idea-mcp-control/actions/workflows/test.yml"><img src="https://github.com/brannow/idea-mcp-control/actions/workflows/test.yml/badge.svg" alt="Test"></a>
+  <a href="https://github.com/brannow/idea-mcp-control/releases/latest"><img src="https://img.shields.io/github/v/release/brannow/idea-mcp-control?label=release" alt="Release"></a>
   <img src="https://img.shields.io/badge/platform-PhpStorm%202025.3+-purple" alt="Platform">
   <img src="https://img.shields.io/badge/MCP%20tools-14-blue" alt="MCP Tools">
-  <a href="https://github.com/brannow/idea-mcp-hub/blob/main/LICENSE"><img src="https://img.shields.io/github/license/brannow/idea-mcp-hub" alt="License"></a>
+  <a href="https://github.com/brannow/idea-mcp-control/blob/main/LICENSE"><img src="https://img.shields.io/github/license/brannow/idea-mcp-control" alt="License"></a>
 </p>
 
 ---
@@ -21,7 +21,7 @@
 ## Setup
 
 1. Install the plugin (Settings > Plugins > Install Plugin from Disk)
-2. Open the **MCP Hub** tool window (bottom panel)
+2. Open the **MCP Control** tool window (bottom panel)
 3. Click **Install .mcp.json** to auto-configure your MCP client
 4. Click **Start Server**
 
@@ -29,7 +29,7 @@ Works with Claude Code, Cursor, Claude Desktop, and any other MCP client.
 
 ### Configuration
 
-Settings > Tools > MCP Hub
+Settings > Tools > MCP Control
 
 | Setting | Default | What it does |
 |---|---|---|
@@ -40,7 +40,7 @@ If the port is already in use (e.g., another PhpStorm instance), you get a notif
 
 ### Installation
 
-**From GitHub Release:** Download the latest `.zip` from [Releases](https://github.com/brannow/idea-mcp-hub/releases), then in PhpStorm go to Settings > Plugins > Gear icon > Install Plugin from Disk and select the zip.
+**From GitHub Release:** Download the latest `.zip` from [Releases](https://github.com/brannow/idea-mcp-control/releases), then in PhpStorm go to Settings > Plugins > Gear icon > Install Plugin from Disk and select the zip.
 
 **From source:** Run `./gradlew buildPlugin`, the zip is in `build/distributions/`.
 

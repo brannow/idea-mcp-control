@@ -36,7 +36,7 @@ import javax.swing.DefaultListModel
 import javax.swing.JPanel
 import javax.swing.ListSelectionModel
 
-private const val TOOL_WINDOW_ID = "MCP Hub"
+private const val TOOL_WINDOW_ID = "MCP Control"
 
 class McpToolWindowPanel(
     private val project: Project,
@@ -194,13 +194,13 @@ private class InstallMcpAction(private val project: Project) :
         val exists = mcpFile()?.exists() == true
         e.presentation.text = if (exists) "Update .mcp.json" else "Install .mcp.json"
         e.presentation.description = if (exists)
-            "Update MCP Hub entry in .mcp.json" else "Create .mcp.json in the project root"
+            "Update MCP Control entry in .mcp.json" else "Create .mcp.json in the project root"
     }
 
     override fun actionPerformed(e: AnActionEvent) {
         val mcpFile = mcpFile() ?: return
         val settings = McpSettings.getInstance(project)
-        val serverKey = "mcp-hub"
+        val serverKey = "mcp-control"
         val serverUrl = "http://127.0.0.1:${settings.port}/mcp"
 
         val existed = mcpFile.exists()
@@ -230,15 +230,15 @@ private class InstallMcpAction(private val project: Project) :
 
         val action = if (existed) "Updated" else "Installed"
         NotificationGroupManager.getInstance()
-            .getNotificationGroup("MCP Hub")
+            .getNotificationGroup("MCP Control")
             .createNotification(
                 "$action .mcp.json",
-                "MCP Hub configured at $serverUrl in ${mcpFile.path}",
+                "MCP Control configured at $serverUrl in ${mcpFile.path}",
                 NotificationType.INFORMATION
             )
             .notify(project)
 
-        McpActivityLog.getInstance(project).log("$action MCP Hub in .mcp.json at ${mcpFile.path}")
+        McpActivityLog.getInstance(project).log("$action MCP Control in .mcp.json at ${mcpFile.path}")
     }
 
     override fun getActionUpdateThread() = ActionUpdateThread.BGT

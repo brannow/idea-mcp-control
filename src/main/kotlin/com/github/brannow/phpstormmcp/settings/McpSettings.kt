@@ -8,7 +8,7 @@ import com.intellij.openapi.project.Project
 
 /**
  * Per-project settings for the MCP server plugin.
- * Persisted in .idea/mcp-hub.xml.
+ * Persisted in .idea/mcp-hub.xml (kept for backwards compatibility).
  */
 @Service(Service.Level.PROJECT)
 @State(

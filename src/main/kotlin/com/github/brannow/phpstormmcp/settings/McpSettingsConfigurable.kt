@@ -19,7 +19,7 @@ class McpSettingsConfigurable(private val project: Project) : Configurable {
     private var autoStartCheckbox: JBCheckBox? = null
     private var panel: JPanel? = null
 
-    override fun getDisplayName(): String = "MCP Hub"
+    override fun getDisplayName(): String = "MCP Control"
 
     override fun createComponent(): JComponent {
         val settings = McpSettings.getInstance(project)

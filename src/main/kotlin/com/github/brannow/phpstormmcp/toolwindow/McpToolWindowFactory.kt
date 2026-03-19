@@ -18,7 +18,7 @@ class McpToolWindowFactory : ToolWindowFactory, DumbAware {
     }
 
     override fun init(toolWindow: ToolWindow) {
-        toolWindow.stripeTitle = "MCP Hub"
+        toolWindow.stripeTitle = "MCP Control"
         toolWindow.setIcon(McpIcons.StatusInactive)
     }
 }

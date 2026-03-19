@@ -132,7 +132,7 @@ class McpServerService(private val project: Project) : Disposable {
 
     private fun notifyPortConflict(port: Int, cause: Exception) {
         val notification = NotificationGroupManager.getInstance()
-            .getNotificationGroup("MCP Hub")
+            .getNotificationGroup("MCP Control")
             .createNotification(
                 "MCP Server: Port $port is already in use",
                 "Another PhpStorm instance or process may be using it.",
@@ -212,7 +212,7 @@ class McpServerService(private val project: Project) : Disposable {
     private fun createMcpServer(): Server {
         return Server(
             serverInfo = Implementation(
-                name = "mcp-hub",
+                name = "mcp-control",
                 version = pluginVersion()
             ),
             options = ServerOptions(
