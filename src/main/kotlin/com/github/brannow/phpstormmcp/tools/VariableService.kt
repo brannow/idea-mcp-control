@@ -3,6 +3,7 @@ package com.github.brannow.phpstormmcp.tools
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.editor.colors.TextAttributesKey
+import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.project.Project
 import com.intellij.ui.SimpleTextAttributes
 import com.intellij.xdebugger.evaluation.XDebuggerEvaluator
@@ -62,6 +63,7 @@ class VariableService(private val project: Project) {
                         if (last) future.complete(collected)
                     }
 
+                    @Deprecated("Deprecated in Java")
                     override fun tooManyChildren(remaining: Int) {
                         future.complete(collected)
                     }
@@ -170,6 +172,8 @@ class VariableService(private val project: Project) {
             throw EvaluationException(cause?.message ?: "Evaluation failed")
         } catch (e: TimeoutException) {
             throw EvaluationException("Evaluation timed out")
+        } catch (e: ProcessCanceledException) {
+            throw e
         } catch (e: Exception) {
             throw EvaluationException(e.message ?: "Evaluation failed")
         }
@@ -241,6 +245,8 @@ class VariableService(private val project: Project) {
 
         val rootChildren = try {
             platform.computeChildren(frame)
+        } catch (e: ProcessCanceledException) {
+            throw e
         } catch (e: Exception) {
             throw VariablePathException("Could not read variables from frame")
         }
@@ -275,6 +281,8 @@ class VariableService(private val project: Project) {
             if (idx < segments.size - 1) {
                 currentChildren = try {
                     platform.computeChildren(match.second)
+                } catch (e: ProcessCanceledException) {
+                    throw e
                 } catch (e: Exception) {
                     val pathSoFar = segments.take(idx + 1).joinToString(".")
                     throw VariablePathException("Could not expand '$pathSoFar'")

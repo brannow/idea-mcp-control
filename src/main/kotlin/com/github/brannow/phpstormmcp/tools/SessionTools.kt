@@ -1,6 +1,7 @@
 package com.github.brannow.phpstormmcp.tools
 
 import com.github.brannow.phpstormmcp.statusbar.McpActivityLog
+import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.project.Project
 import io.modelcontextprotocol.kotlin.sdk.server.Server
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
@@ -74,6 +75,8 @@ fun Server.registerSessionTools(project: Project) {
         activityLog.log("session_list")
         try {
             handleSessionList(service, breakpointService.listBreakpoints())
+        } catch (e: ProcessCanceledException) {
+            throw e
         } catch (e: Exception) {
             err(e.message ?: "Unknown error")
         }
@@ -106,6 +109,8 @@ fun Server.registerSessionTools(project: Project) {
 
         try {
             handleSessionStop(service, all)
+        } catch (e: ProcessCanceledException) {
+            throw e
         } catch (e: Exception) {
             err(e.message ?: "Unknown error")
         }

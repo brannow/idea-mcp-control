@@ -6,6 +6,7 @@ import com.intellij.execution.console.DuplexConsoleView
 import com.intellij.execution.impl.ConsoleViewImpl
 import com.intellij.execution.ui.ConsoleView
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.project.Project
 import com.intellij.xdebugger.XDebugSession
 import com.intellij.xdebugger.XDebuggerManager
@@ -271,6 +272,8 @@ fun Server.registerDebugTools(project: Project) {
                     withSessionNotice(ok(nodes.joinToString("\n\n") { (p, node) -> formatVariableDetail(node, p) }))
                 }
             }
+        } catch (e: ProcessCanceledException) {
+            throw e
         } catch (e: VariablePathException) {
             err(e.message ?: "Variable not found")
         } catch (e: Exception) {
@@ -366,6 +369,8 @@ fun Server.registerDebugTools(project: Project) {
             val frames = if (includeStack) extractStackFrames(session, stackFrameService) else null
 
             withSessionNotice(ok(formatSnapshot(sessionInfo, source, variables, frames, activeDepth = frameIndex, collapseLibrary = !expandStack)))
+        } catch (e: ProcessCanceledException) {
+            throw e
         } catch (e: Exception) {
             err(e.message ?: "Unknown error")
         }
@@ -425,6 +430,8 @@ fun Server.registerDebugTools(project: Project) {
             }
 
             withSessionNotice(ok(formatEvaluationResult(expression, node)))
+        } catch (e: ProcessCanceledException) {
+            throw e
         } catch (e: Exception) {
             err(e.message ?: "Unknown error")
         }
@@ -491,6 +498,8 @@ fun Server.registerDebugTools(project: Project) {
             val frames = if (includeStack) extractStackFrames(session!!, stackFrameService) else null
 
             withSessionNotice(ok(formatSnapshot(sessionInfo, source, variables, frames, collapseLibrary = !expandStack)))
+        } catch (e: ProcessCanceledException) {
+            throw e
         } catch (e: Exception) {
             err(e.message ?: "Unknown error")
         }
@@ -537,6 +546,8 @@ fun Server.registerDebugTools(project: Project) {
             }
 
             withSessionNotice(ok(output))
+        } catch (e: ProcessCanceledException) {
+            throw e
         } catch (e: Exception) {
             err(e.message ?: "Unknown error")
         }

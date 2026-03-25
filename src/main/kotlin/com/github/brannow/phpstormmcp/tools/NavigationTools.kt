@@ -1,6 +1,7 @@
 package com.github.brannow.phpstormmcp.tools
 
 import com.github.brannow.phpstormmcp.statusbar.McpActivityLog
+import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.xdebugger.XDebugSession
@@ -191,6 +192,8 @@ fun Server.registerNavigationTools(project: Project) {
                 params.includeSource, params.includeVars, params.includeStack, params.includeGlobals,
                 params.expandStack
             ))
+        } catch (e: ProcessCanceledException) {
+            throw e
         } catch (e: Exception) {
             err(e.message ?: "Unknown error")
         }
@@ -248,6 +251,8 @@ fun Server.registerNavigationTools(project: Project) {
                 params.includeSource, params.includeVars, params.includeStack, params.includeGlobals,
                 params.expandStack
             ))
+        } catch (e: ProcessCanceledException) {
+            throw e
         } catch (e: Exception) {
             err(e.message ?: "Unknown error")
         }

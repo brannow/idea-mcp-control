@@ -1,6 +1,7 @@
 package com.github.brannow.phpstormmcp.tools
 
 import com.github.brannow.phpstormmcp.statusbar.McpActivityLog
+import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.project.Project
 import com.intellij.xdebugger.XDebuggerManager
 import io.modelcontextprotocol.kotlin.sdk.server.Server
@@ -110,6 +111,8 @@ internal fun handleBreakpointAdd(
         try {
             val result = service.addBreakpoint(parsed.first, parsed.second, condition, logExpression, suspend)
             highlights[result.breakpoint.id] = "new"
+        } catch (e: ProcessCanceledException) {
+            throw e
         } catch (e: Exception) {
             errors.add("${loc}: ${e.message}")
         }
@@ -265,6 +268,8 @@ fun Server.registerBreakpointTools(project: Project) {
         activityLog.log("breakpoint_list" + if (fileFilter != null) " (file: $fileFilter)" else "")
         try {
             handleBreakpointList(service, fileFilter, getActiveDebugLocation(project))
+        } catch (e: ProcessCanceledException) {
+            throw e
         } catch (e: Exception) {
             err(e.message ?: "Unknown error")
         }
@@ -310,6 +315,8 @@ fun Server.registerBreakpointTools(project: Project) {
         activityLog.log("breakpoint_add $location")
         try {
             handleBreakpointAdd(service, location, condition, logExpression, suspend, getActiveDebugLocation(project))
+        } catch (e: ProcessCanceledException) {
+            throw e
         } catch (e: Exception) {
             err(e.message ?: "Unknown error")
         }
@@ -364,6 +371,8 @@ fun Server.registerBreakpointTools(project: Project) {
         activityLog.log("breakpoint_add_exception $className")
         try {
             handleBreakpointAddException(service, className, condition, logExpression, suspend)
+        } catch (e: ProcessCanceledException) {
+            throw e
         } catch (e: Exception) {
             err(e.message ?: "Unknown error")
         }
@@ -415,6 +424,8 @@ fun Server.registerBreakpointTools(project: Project) {
         activityLog.log("breakpoint_update $id")
         try {
             handleBreakpointUpdate(service, id, enabled, condition, logExpression, suspend, getActiveDebugLocation(project))
+        } catch (e: ProcessCanceledException) {
+            throw e
         } catch (e: Exception) {
             err(e.message ?: "Unknown error")
         }
@@ -452,6 +463,8 @@ fun Server.registerBreakpointTools(project: Project) {
         try {
             val activeLocation = getActiveDebugLocation(project)
             handleBreakpointRemove(service, ids, all, activeLocation)
+        } catch (e: ProcessCanceledException) {
+            throw e
         } catch (e: AmbiguousBreakpointException) {
             ambiguousResponse(idParam ?: "", e.breakpoints, getActiveDebugLocation(project))
         } catch (e: Exception) {
