@@ -107,6 +107,15 @@ class AgentSessionTrackerTest {
     }
 
     @Test
+    fun `pendingNotice set externally is consumed once`() {
+        AgentSessionTracker.pendingNotice = "Note: Previous session #111 terminated. Now using session #222 \"test.php\"."
+        val notice = AgentSessionTracker.consumeNotice()
+        assertEquals("Note: Previous session #111 terminated. Now using session #222 \"test.php\".", notice)
+        // Second consume returns null
+        assertNull(AgentSessionTracker.consumeNotice())
+    }
+
+    @Test
     fun `switch auto-tracks then subsequent call sees no switch`() {
         AgentSessionTracker.trackById("111")
         // Session switches — auto-tracked to 222

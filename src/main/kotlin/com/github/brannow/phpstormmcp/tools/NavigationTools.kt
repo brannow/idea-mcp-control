@@ -240,6 +240,12 @@ fun Server.registerNavigationTools(project: Project) {
                 }
                 ?: return@addTool err("File not found: $filePath")
 
+            // Sanity check: line must exist in the file
+            val document = com.intellij.openapi.fileEditor.FileDocumentManager.getInstance().getDocument(file)
+            if (document != null && line > document.lineCount) {
+                return@addTool err("Line $line is beyond end of file (${file.name} has ${document.lineCount} lines)")
+            }
+
             val position = XDebuggerUtil.getInstance().createPosition(file, line - 1)
                 ?: return@addTool err("Could not create source position for $location")
 

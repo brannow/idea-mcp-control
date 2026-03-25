@@ -30,7 +30,7 @@ class VariableServiceTest {
 
     @ParameterizedTest(name = "{0}")
     @MethodSource("cases")
-    fun `getVariables`(case: Case) {
+    fun getVariables(case: Case) {
         val service = buildService(case)
         val frame = mockk<XStackFrame>()
         val result = service.getVariables(frame)
@@ -42,13 +42,14 @@ class VariableServiceTest {
     data class FormatCase(
         val name: String,
         val variables: List<VariableInfo>,
+        val hiddenGlobalCount: Int = 0,
         val expected: String,
     )
 
     @ParameterizedTest(name = "{0}")
     @MethodSource("formatCases")
-    fun `formatVariables`(case: FormatCase) {
-        assertEquals(case.expected, formatVariables(case.variables))
+    fun formatVariables(case: FormatCase) {
+        assertEquals(case.expected, formatVariables(case.variables, case.hiddenGlobalCount))
     }
 
     // --- filterGlobals tests ---
@@ -58,13 +59,15 @@ class VariableServiceTest {
         val variables: List<VariableInfo>,
         val includeGlobals: Boolean,
         val expectedNames: List<String>,
+        val expectedHiddenCount: Int = 0,
     )
 
     @ParameterizedTest(name = "{0}")
     @MethodSource("filterCases")
-    fun `filterGlobals`(case: FilterCase) {
+    fun filterGlobals(case: FilterCase) {
         val result = filterGlobals(case.variables, case.includeGlobals)
-        assertEquals(case.expectedNames, result.map { it.name })
+        assertEquals(case.expectedNames, result.variables.map { it.name })
+        assertEquals(case.expectedHiddenCount, result.hiddenGlobalCount)
     }
 
     // --- formatVariable tests ---
@@ -77,7 +80,7 @@ class VariableServiceTest {
 
     @ParameterizedTest(name = "{0}")
     @MethodSource("formatVarCases")
-    fun `formatVariable`(case: FormatVarCase) {
+    fun formatVariable(case: FormatVarCase) {
         assertEquals(case.expected, formatVariable(case.variable))
     }
 
@@ -91,7 +94,7 @@ class VariableServiceTest {
 
     @ParameterizedTest(name = "{0}")
     @MethodSource("parsePathCases")
-    fun `parsePath`(case: ParsePathCase) {
+    fun parsePath(case: ParsePathCase) {
         assertEquals(case.expected, VariableService.parsePath(case.path))
     }
 
@@ -106,7 +109,7 @@ class VariableServiceTest {
 
     @ParameterizedTest(name = "{0}")
     @MethodSource("matchCases")
-    fun `matchesSegment`(case: MatchCase) {
+    fun matchesSegment(case: MatchCase) {
         assertEquals(case.expected, VariableService.matchesSegment(case.childName, case.segment))
     }
 
@@ -129,7 +132,7 @@ class VariableServiceTest {
 
     @ParameterizedTest(name = "{0}")
     @MethodSource("detailCases")
-    fun `getVariableDetail`(case: DetailCase) {
+    fun getVariableDetail(case: DetailCase) {
         val service = buildDetailService(case.tree)
         val frame = mockk<XStackFrame>()
         val result = service.getVariableDetail(frame, case.path, case.depth)
@@ -138,7 +141,7 @@ class VariableServiceTest {
 
     @ParameterizedTest(name = "{0}")
     @MethodSource("circularCases")
-    fun `getVariableDetail — circular reference`(case: DetailCase) {
+    fun `getVariableDetail - circular reference`(case: DetailCase) {
         val service = buildDetailService(case.tree)
         val frame = mockk<XStackFrame>()
         val result = service.getVariableDetail(frame, case.path, case.depth)
@@ -147,7 +150,7 @@ class VariableServiceTest {
 
     @ParameterizedTest(name = "{0}")
     @MethodSource("circularArrayCases")
-    fun `getVariableDetail — arrays don't trigger circular detection`(case: DetailCase) {
+    fun `getVariableDetail - arrays don't trigger circular detection`(case: DetailCase) {
         val service = buildDetailService(case.tree)
         val frame = mockk<XStackFrame>()
         val result = service.getVariableDetail(frame, case.path, case.depth)
@@ -155,21 +158,21 @@ class VariableServiceTest {
     }
 
     @Test
-    fun `isObjectType — scalars and arrays are not objects`() {
+    fun `isObjectType - scalars and arrays are not objects`() {
         listOf("array", "array[7]", "array[0]", "int", "string", "string[25]", "float", "bool", "null", "Array", "STRING").forEach {
             assertEquals(false, VariableService.isObjectType(it), "Expected '$it' to NOT be an object type")
         }
     }
 
     @Test
-    fun `isObjectType — class names are objects`() {
+    fun `isObjectType - class names are objects`() {
         listOf("SequenceNode", "TypedPatternEngine\\Nodes\\SequenceNode", "ServerRequest", "stdClass").forEach {
             assertEquals(true, VariableService.isObjectType(it), "Expected '$it' to be an object type")
         }
     }
 
     @Test
-    fun `getVariableDetail — explicit path through circular reference works`() {
+    fun `getVariableDetail - explicit path through circular reference works`() {
         // The agent should be able to navigate INTO a circular reference via explicit path.
         // Cycle detection only blocks automatic expansion, not path navigation.
         val tree = mapOf(
@@ -197,7 +200,7 @@ class VariableServiceTest {
     }
 
     @Test
-    fun `getVariableDetail — ambiguous inherited property`() {
+    fun `getVariableDetail - ambiguous inherited property`() {
         val tree = mapOf("node" to MockVar("LiteralNode", "", hasChildren = true, children = mapOf(
             "*AstNode*parent" to MockVar("null", "null"),
             "*NestedAstNode*parent" to MockVar("null", "null"),
@@ -213,7 +216,7 @@ class VariableServiceTest {
     }
 
     @Test
-    fun `getVariableDetail — path not found`() {
+    fun `getVariableDetail - path not found`() {
         val tree = mapOf("foo" to MockVar("string", "\"bar\""))
         val service = buildDetailService(tree)
         val frame = mockk<XStackFrame>()
@@ -234,7 +237,7 @@ class VariableServiceTest {
 
     @ParameterizedTest(name = "{0}")
     @MethodSource("formatDetailCases")
-    fun `formatVariableDetail`(case: FormatDetailCase) {
+    fun formatVariableDetail(case: FormatDetailCase) {
         assertEquals(case.expected, formatVariableDetail(case.node, case.path))
     }
 
@@ -300,8 +303,8 @@ class VariableServiceTest {
             }
 
             override fun computePresentation(value: XValue): VariableService.VariablePresentation {
-                // Match by position — values come back in same order as case.variables
-                val idx = case.variables.indexOfFirst { v ->
+                // Match by position - values come back in same order as case.variables
+                case.variables.indexOfFirst { _ ->
                     // Find the first variable whose XValue mock hasn't been consumed yet
                     true
                 }
@@ -325,7 +328,7 @@ class VariableServiceTest {
     // --- evaluateExpression tests ---
 
     @Test
-    fun `evaluateExpression — scalar result`() {
+    fun `evaluateExpression - scalar result`() {
         val resultXValue = mockk<XValue>()
         val service = buildEvalService(resultXValue, MockVar("int", "42"))
         val evaluator = mockk<XDebuggerEvaluator>()
@@ -337,7 +340,7 @@ class VariableServiceTest {
     }
 
     @Test
-    fun `evaluateExpression — object with depth`() {
+    fun `evaluateExpression - object with depth`() {
         val resultXValue = mockk<XValue>()
         val service = buildEvalService(
             resultXValue,
@@ -361,7 +364,7 @@ class VariableServiceTest {
     }
 
     @Test
-    fun `evaluateExpression — no evaluator throws`() {
+    fun `evaluateExpression - no evaluator throws`() {
         val project = mockk<Project>()
         every { project.basePath } returns "/project"
         val service = VariableService(project)
@@ -375,7 +378,7 @@ class VariableServiceTest {
     }
 
     @Test
-    fun `evaluateExpression — evaluation error propagates`() {
+    fun `evaluateExpression - evaluation error propagates`() {
         val project = mockk<Project>()
         every { project.basePath } returns "/project"
         val service = VariableService(project)
@@ -489,19 +492,42 @@ class VariableServiceTest {
                 name = "globals hidden by default",
                 variables = mixedWithGlobals,
                 includeGlobals = false,
-                expectedNames = listOf("this", "foo")
+                expectedNames = listOf("this", "foo"),
+                expectedHiddenCount = 9
             ),
             FilterCase(
                 name = "globals shown when requested",
                 variables = mixedWithGlobals,
                 includeGlobals = true,
-                expectedNames = mixedWithGlobals.map { it.name }
+                expectedNames = mixedWithGlobals.map { it.name },
+                expectedHiddenCount = 0
             ),
             FilterCase(
-                name = "no variables — stays empty",
+                name = "no variables - stays empty",
                 variables = emptyList(),
                 includeGlobals = false,
-                expectedNames = emptyList()
+                expectedNames = emptyList(),
+                expectedHiddenCount = 0
+            ),
+            FilterCase(
+                name = "only globals - all hidden",
+                variables = listOf(
+                    VariableInfo("_SERVER", null, "", true),
+                    VariableInfo("_GET", null, "", true),
+                ),
+                includeGlobals = false,
+                expectedNames = emptyList(),
+                expectedHiddenCount = 2
+            ),
+            FilterCase(
+                name = "no globals in list - nothing hidden",
+                variables = listOf(
+                    VariableInfo("foo", "string", "\"bar\"", false),
+                    VariableInfo("count", "int", "42", false),
+                ),
+                includeGlobals = false,
+                expectedNames = listOf("foo", "count"),
+                expectedHiddenCount = 0
             ),
         )
 
@@ -539,6 +565,30 @@ class VariableServiceTest {
                         "\$request = {ServerRequest}\n" +
                         "\$foo = {null} null"
             ),
+            FormatCase(
+                name = "no locals but globals hidden - singular",
+                variables = emptyList(),
+                hiddenGlobalCount = 1,
+                expected = "(no local variables — 1 global hidden, use globals: true to include)"
+            ),
+            FormatCase(
+                name = "no locals but globals hidden - plural",
+                variables = emptyList(),
+                hiddenGlobalCount = 9,
+                expected = "(no local variables — 9 globals hidden, use globals: true to include)"
+            ),
+            FormatCase(
+                name = "no locals no globals - plain message",
+                variables = emptyList(),
+                hiddenGlobalCount = 0,
+                expected = "(no variables)"
+            ),
+            FormatCase(
+                name = "has locals with hidden globals - no hint needed",
+                variables = listOf(VariableInfo("foo", "string", "\"bar\"", false)),
+                hiddenGlobalCount = 5,
+                expected = "\$foo = {string} \"bar\""
+            ),
         )
 
         @JvmStatic
@@ -558,7 +608,7 @@ class VariableServiceTest {
                     "CompiledPattern", "", hasChildren = true,
                     children = mapOf(
                         "pattern" to MockVar("string", "\"PAGE{id:int}\""),
-                        "regex" to MockVar("string", "\"/^PAGE(?P<g1>\\d+)\\\$/\""),
+                        "regex" to MockVar("string", "\"/^PAGE(?P<g1>\\d+)\\$/\""),
                         "ast" to MockVar("SequenceNode", "", hasChildren = true, children = mapOf(
                             "children" to MockVar("array", "array(2)", hasChildren = true),
                         )),
@@ -577,7 +627,7 @@ class VariableServiceTest {
                         "engine", "CompiledPattern", "", true,
                         children = listOf(
                             VariableNode("pattern", "string", "\"PAGE{id:int}\"", false),
-                            VariableNode("regex", "string", "\"/^PAGE(?P<g1>\\d+)\\\$/\"", false),
+                            VariableNode("regex", "string", "\"/^PAGE(?P<g1>\\d+)\\$/\"", false),
                             VariableNode("ast", "SequenceNode", "", true),
                         )
                     )
@@ -591,7 +641,7 @@ class VariableServiceTest {
                         "engine", "CompiledPattern", "", true,
                         children = listOf(
                             VariableNode("pattern", "string", "\"PAGE{id:int}\"", false),
-                            VariableNode("regex", "string", "\"/^PAGE(?P<g1>\\d+)\\\$/\"", false),
+                            VariableNode("regex", "string", "\"/^PAGE(?P<g1>\\d+)\\$/\"", false),
                             VariableNode("ast", "SequenceNode", "", true, children = listOf(
                                 VariableNode("children", "array", "array(2)", true),
                             )),
@@ -611,7 +661,7 @@ class VariableServiceTest {
                     )
                 ),
                 DetailCase(
-                    name = "scalar — no expansion",
+                    name = "scalar - no expansion",
                     tree = engineTree,
                     path = "\$foo",
                     depth = 1,
@@ -658,7 +708,7 @@ class VariableServiceTest {
                         "children" to MockVar("array", "array(1)", hasChildren = true, children = mapOf(
                             "0" to MockVar("LiteralNode", "", hasChildren = true, children = mapOf(
                                 "text" to MockVar("string", "\"PAGE\""),
-                                // parent points back to a SequenceNode — cycle!
+                                // parent points back to a SequenceNode - cycle!
                                 "parent" to MockVar("SequenceNode", "", hasChildren = true, children = mapOf(
                                     "regex" to MockVar("string", "\"PAGE(?P<g1>\\d+)\""),
                                     "children" to MockVar("array", "array(1)", hasChildren = true),
@@ -671,7 +721,7 @@ class VariableServiceTest {
 
             return listOf(
                 DetailCase(
-                    name = "circular reference detected at depth 3 — parent back-reference",
+                    name = "circular reference detected at depth 3 - parent back-reference",
                     tree = circularTree,
                     path = "\$ast",
                     depth = 5, // would explode without detection
@@ -683,7 +733,7 @@ class VariableServiceTest {
                             VariableNode("children", "array", "array(1)", true, children = listOf(
                                 VariableNode("0", "LiteralNode", "", true, children = listOf(
                                     VariableNode("text", "string", "\"PAGE\"", false),
-                                    // This SequenceNode is detected as circular — ancestor chain has SequenceNode
+                                    // This SequenceNode is detected as circular - ancestor chain has SequenceNode
                                     VariableNode("parent", "SequenceNode", "", true, children = null, circular = true),
                                 )),
                             )),
@@ -691,7 +741,7 @@ class VariableServiceTest {
                     )
                 ),
                 DetailCase(
-                    name = "depth 1 — no cycle reached yet",
+                    name = "depth 1 - no cycle reached yet",
                     tree = circularTree,
                     path = "\$ast",
                     depth = 1,
@@ -722,7 +772,7 @@ class VariableServiceTest {
 
             return listOf(
                 DetailCase(
-                    name = "nested arrays — no false positive",
+                    name = "nested arrays - no false positive",
                     tree = nestedArrayTree,
                     path = "\$data",
                     depth = 5,
@@ -834,7 +884,7 @@ class VariableServiceTest {
                 expected = "\$bar = {int} 99"
             ),
             FormatVarCase(
-                name = "object — empty value, type as fallback",
+                name = "object - empty value, type as fallback",
                 variable = VariableInfo("this", "Brannow\\Sandbox\\WorldClass", "", true),
                 expected = "\$this = {Brannow\\Sandbox\\WorldClass}"
             ),

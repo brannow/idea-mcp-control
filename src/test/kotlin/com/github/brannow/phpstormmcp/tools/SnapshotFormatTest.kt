@@ -12,13 +12,14 @@ class SnapshotFormatTest {
         val source: SourceContext?,
         val variables: List<VariableInfo>?,
         val frames: List<FrameInfo>?,
+        val hiddenGlobalCount: Int = 0,
         val expected: String,
     )
 
     @ParameterizedTest(name = "{0}")
     @MethodSource("cases")
     fun `formatSnapshot`(case: Case) {
-        val result = formatSnapshot(case.session, case.source, case.variables, case.frames)
+        val result = formatSnapshot(case.session, case.source, case.variables, case.frames, hiddenGlobalCount = case.hiddenGlobalCount)
         assertEquals(case.expected, result)
     }
 
@@ -120,6 +121,26 @@ class SnapshotFormatTest {
                 variables = null,
                 frames = null,
                 expected = "#12345 \"index.php\" at src/WorldClass.php:22 (active)"
+            ),
+            Case(
+                name = "empty variables with hidden globals hint",
+                session = sampleSession,
+                source = null,
+                variables = emptyList(),
+                frames = null,
+                hiddenGlobalCount = 5,
+                expected = "#12345 \"index.php\" at src/WorldClass.php:22 (active)\n\n" +
+                        "(no local variables — 5 globals hidden, use globals: true to include)"
+            ),
+            Case(
+                name = "empty variables no globals - plain message",
+                session = sampleSession,
+                source = null,
+                variables = emptyList(),
+                frames = null,
+                hiddenGlobalCount = 0,
+                expected = "#12345 \"index.php\" at src/WorldClass.php:22 (active)\n\n" +
+                        "(no variables)"
             ),
         )
     }
