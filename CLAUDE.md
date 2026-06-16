@@ -12,7 +12,7 @@ phpstorm-mcp/
 ├── src/main/resources/META-INF/plugin.xml              # Plugin configuration
 ├── roadmap.md                                          # Project Roadmap (todo list)
 ├── build.gradle.kts                                    # Gradle build (IntelliJ Platform Gradle Plugin 2.x)
-├── gradle.properties                                   # Platform target: PhpStorm 2025.3
+├── gradle.properties                                   # Build target: PhpStorm 2026.1.3 (compat down to 2025.3)
 ├── internal/                                           # Documentation & reference (not shipped with plugin)
 │   ├── INDEX.md                                        # ** START HERE ** — master documentation index
 │   ├── docs/                                           # Organized documentation
@@ -47,7 +47,7 @@ phpstorm-mcp/
 
 - **Language**: Kotlin (JetBrains recommendation, aligns with Kotlin MCP SDK)
 - **MCP SDK**: Kotlin SDK (`internal/reference-Repository/kotlin-sdk/`)
-- **Target IDE**: PhpStorm 2025.3 (build 253)
+- **Target IDE**: build against PhpStorm 2026.1.3 (build 261), compatible down to 2025.3 (`sinceBuild 253`, `untilBuild 261.*`). Kotlin API/language capped to 2.1 so we never call stdlib missing on the 253 floor. `verifyPlugin` checks binary compat against 2025.3. _(toolchain bump 2026-06: platform 2026.1.3, Kotlin 2.3.21, IntelliJ Gradle Plugin 2.16, Gradle 9.5.1, MCP SDK 0.13, ktor 3.5)_
 - **Plugin type**: MCP Server — the AI agent is the MCP client
 - **Debug sessions**: Human starts sessions, agent interacts with them
 
