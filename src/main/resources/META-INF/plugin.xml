@@ -3,6 +3,11 @@
     <name>MCP Control</name>
     <vendor url="https://github.com/brannow/idea-mcp-control">Benjamin Rannow</vendor>
     <change-notes><![CDATA[
+        <b>0.6.1</b>
+        <ul>
+            <li>Toolchain upgrade: built against PhpStorm 2026.1.3 (still compatible with 2025.3 – 2026.1)</li>
+            <li>Updated dependencies: MCP Kotlin SDK 0.13, Ktor 3.5, Kotlin 2.3.21, IntelliJ Platform Gradle Plugin 2.16, Gradle 9.5.1</li>
+        </ul>
         <b>0.6.0</b>
         <ul>
             <li>Smarter variable hint: when globals are filtered and no local variables remain, the agent is told how many globals are hidden and how to include them</li>
