@@ -46,14 +46,14 @@ If the port is already in use (e.g., another PhpStorm instance), you get a notif
 
 ## Tools
 
-14 tools across 4 categories. All debug tools operate on the active session (the one focused in the IDE's debug panel).
+13 tools across 4 categories. All debug tools operate on the active session (the one focused in the IDE's debug panel).
 
 ### Breakpoints (work without a debug session)
 
 | Tool | What it does |
 |---|---|
 | `breakpoint_list` | List all breakpoints (line + exception) with conditions, status, annotations |
-| `breakpoint_add` | Add a line breakpoint with optional condition, log expression, suspend control |
+| `breakpoint_add` | Add a line or method breakpoint (a method/function definition line becomes a real method breakpoint) with optional condition, log expression, suspend control |
 | `breakpoint_add_exception` | Break on a PHP exception class. Short names are resolved via project index. |
 | `breakpoint_update` | Modify any breakpoint by ID (enable/disable, change condition, etc.) |
 | `breakpoint_remove` | Remove by ID, file:line, exception class FQCN, file path, or all |
@@ -76,10 +76,9 @@ If the port is already in use (e.g., another PhpStorm instance), you get a notif
 
 | Tool | What it does |
 |---|---|
-| `debug_snapshot` | Get current state without changing anything |
-| `debug_variable_detail` | Expand variables to any depth with circular reference detection |
-| `debug_inspect_frame` | Switch to a different stack frame and inspect its scope |
-| `debug_evaluate` | Evaluate PHP expressions in debug context, including side effects |
+| `debug_snapshot` | Get current state without changing anything; `frame_index` inspects any stack frame's scope |
+| `debug_variable_detail` | Expand variables to any depth with circular reference detection; `offset`/`limit` page through large collections |
+| `debug_evaluate` | Evaluate PHP expressions in debug context, including side effects; `offset`/`limit` page through large results |
 | `debug_console` | Read stdout/stderr from the debug console (works with Docker/remote processes) |
 
 ## How it works

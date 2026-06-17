@@ -98,14 +98,14 @@
         They can't set breakpoints, step through code, or inspect variables.
         MCP Control exposes these IDE-only capabilities as MCP tools.</p>
 
-        <h3>14 tools across 4 categories</h3>
+        <h3>13 tools across 4 categories</h3>
 
         <b>Breakpoints</b> (work without an active debug session)
         <ul>
             <li>list, add, update, remove — with batch support (comma-separated)</li>
             <li>Exception breakpoints — pause on any PHP exception class</li>
+            <li>Method breakpoints — a breakpoint on a method/function definition line becomes a real method breakpoint</li>
             <li>Conditions, log expressions, suspend control</li>
-            <li>Method breakpoint detection — prevents wrong breakpoint type</li>
         </ul>
 
         <b>Session management</b>
@@ -123,9 +123,8 @@
 
         <b>Inspection</b> (requires paused session)
         <ul>
-            <li>Full debug snapshot (source + variables + stack trace)</li>
-            <li>Expand variables to any depth (circular references detected)</li>
-            <li>Switch stack frames and inspect variables at that scope</li>
+            <li>Full debug snapshot (source + variables + stack trace); inspect any stack frame's scope by index</li>
+            <li>Expand variables to any depth (circular references detected); page through large collections with offset/limit</li>
             <li>Evaluate PHP expressions with side effects ($bar = 'new value')</li>
             <li>Read console output (stdout/stderr) — works with Docker/remote processes</li>
         </ul>
