@@ -2,6 +2,39 @@ package com.github.brannow.phpstormmcp.tools
 
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import io.modelcontextprotocol.kotlin.sdk.types.TextContent
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+
+// --- Activity-log formatting ---
+
+private const val MAX_LOG_VALUE_LEN = 120
+
+/**
+ * Render a tool call for the PhpStorm activity log as `name(arg=value, ...)` so the human
+ * sees not just *which* tool the agent called but *with what arguments* — the part that
+ * actually explains the agent's behavior. Centralized so every tool logs consistently
+ * (previously each call site hand-formatted, and half omitted args entirely).
+ *
+ * Long values (e.g. a big eval expression) are truncated; this is a glanceable log, not a transcript.
+ */
+fun formatToolCall(name: String, args: JsonObject?): String {
+    if (args.isNullOrEmpty()) return name
+    val rendered = args.entries.joinToString(", ") { (key, value) -> "$key=${renderLogValue(value)}" }
+    return "$name($rendered)"
+}
+
+private fun renderLogValue(element: JsonElement): String {
+    val raw = when (element) {
+        is JsonNull -> "null"
+        is JsonPrimitive -> element.content
+        is JsonArray -> "[" + element.joinToString(", ") { renderLogValue(it) } + "]"
+        is JsonObject -> "{" + element.entries.joinToString(", ") { (k, v) -> "$k=${renderLogValue(v)}" } + "}"
+    }
+    return if (raw.length > MAX_LOG_VALUE_LEN) raw.take(MAX_LOG_VALUE_LEN - 1) + "…" else raw
+}
 
 /**
  * Shared response helpers for all MCP tools.
@@ -374,9 +407,7 @@ fun formatVariableDetail(node: VariableNode, path: String): String {
     val display = variableDisplayValue(node)
     val circularTag = if (node.circular) " (circular reference)" else ""
     val header = "$path = $display$circularTag"
-    val children = node.children
-    if (children.isNullOrEmpty()) return header
-    return "$header\n${formatVariableChildren(children, indent = 1)}"
+    return appendChildBlock(header, node, indent = 1)
 }
 
 fun formatVariableDetailList(nodes: List<VariableNode>): String {
@@ -385,14 +416,34 @@ fun formatVariableDetailList(nodes: List<VariableNode>): String {
         val name = if (node.name.startsWith("$")) node.name else "$${node.name}"
         val display = variableDisplayValue(node)
         val circularTag = if (node.circular) " (circular reference)" else ""
-        val line = "$name = $display$circularTag"
-        val children = node.children
-        if (children.isNullOrEmpty()) {
-            line
-        } else {
-            "$line\n${formatVariableChildren(children, indent = 1)}"
-        }
+        appendChildBlock("$name = $display$circularTag", node, indent = 1)
     }
+}
+
+/**
+ * Append a node's expanded children (and a pagination hint, if the child list was capped)
+ * under an already-formatted header line.
+ */
+private fun appendChildBlock(header: String, node: VariableNode, indent: Int): String {
+    val children = node.children
+    val sb = StringBuilder(header)
+    if (!children.isNullOrEmpty()) {
+        sb.append("\n").append(formatVariableChildren(children, indent))
+    }
+    moreChildrenLine(node, children?.size ?: 0, indent)?.let { sb.append("\n").append(it) }
+    return sb.toString()
+}
+
+/**
+ * Pagination hint shown when a node's children were capped by the breadth limit.
+ * Mirrors what a human would do next: page with offset/limit.
+ */
+private fun moreChildrenLine(node: VariableNode, shownCount: Int, indent: Int): String? {
+    val total = node.childCount ?: return null
+    val remaining = total - node.childOffset - shownCount
+    if (remaining <= 0) return null
+    val prefix = "  ".repeat(indent)
+    return "$prefix... $remaining more children (use offset/limit to paginate)"
 }
 
 fun filterGlobalNodes(nodes: List<VariableNode>, includeGlobals: Boolean): List<VariableNode> {
@@ -410,11 +461,12 @@ internal fun formatVariableChildren(children: List<VariableNode>, indent: Int): 
         val circularTag = if (child.circular) " (circular reference)" else ""
         val line = "$prefix${child.name} = $display$circularTag"
         val nested = child.children
-        if (nested.isNullOrEmpty()) {
-            line
-        } else {
-            "$line\n${formatVariableChildren(nested, indent + 1)}"
+        val sb = StringBuilder(line)
+        if (!nested.isNullOrEmpty()) {
+            sb.append("\n").append(formatVariableChildren(nested, indent + 1))
         }
+        moreChildrenLine(child, nested?.size ?: 0, indent + 1)?.let { sb.append("\n").append(it) }
+        sb.toString()
     }
 }
 
@@ -432,10 +484,7 @@ internal fun variableDisplayValue(node: VariableNode): String {
 fun formatEvaluationResult(expression: String, node: VariableNode): String {
     val display = variableDisplayValue(node)
     val circularTag = if (node.circular) " (circular reference)" else ""
-    val header = "$expression = $display$circularTag"
-    val children = node.children
-    if (children.isNullOrEmpty()) return header
-    return "$header\n${formatVariableChildren(children, indent = 1)}"
+    return appendChildBlock("$expression = $display$circularTag", node, indent = 1)
 }
 
 // --- Stack frame formatting ---
