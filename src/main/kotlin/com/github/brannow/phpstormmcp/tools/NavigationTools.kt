@@ -14,19 +14,31 @@ import io.modelcontextprotocol.kotlin.sdk.types.ToolAnnotations
 import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
 import kotlinx.serialization.json.*
 import java.util.concurrent.CompletableFuture
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
+
+/**
+ * How long a navigation action waits for the session to pause/stop before returning
+ * control to the agent. Without this bound, a `continue` with no breakpoint ahead — or
+ * a long-running/hanging request — would block the MCP request indefinitely on
+ * `future.get()`. On timeout the session keeps running; a later debug_snapshot picks it
+ * up once it pauses.
+ */
+private const val STEP_TIMEOUT_SECONDS = 60L
 
 /**
  * Result of waiting for a debug session after a navigation action.
- * Either the session paused again, or it stopped (ended).
  */
 internal sealed class StepResult {
     data object Paused : StepResult()
     data object SessionEnded : StepResult()
+    /** Timed out: the session is still executing (no pause within the timeout window). */
+    data object StillRunning : StepResult()
 }
 
 /**
  * Register a temporary listener, execute a step action, and wait for
- * the session to either pause or stop.
+ * the session to either pause or stop — bounded by [STEP_TIMEOUT_SECONDS].
  */
 internal fun stepAndWait(session: XDebugSession, action: () -> Unit): StepResult {
     val future = CompletableFuture<StepResult>()
@@ -44,7 +56,9 @@ internal fun stepAndWait(session: XDebugSession, action: () -> Unit): StepResult
     session.addSessionListener(listener)
     try {
         action()
-        return future.get()
+        return future.get(STEP_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+    } catch (_: TimeoutException) {
+        return StepResult.StillRunning
     } finally {
         session.removeSessionListener(listener)
     }
@@ -71,14 +85,31 @@ internal fun buildSnapshotFromResult(
     expandStack: Boolean = false
 ): CallToolResult {
     return when (result) {
-        is StepResult.SessionEnded -> ok("Session ended")
+        is StepResult.SessionEnded -> {
+            val sessionId = System.identityHashCode(session).toString()
+            // The console is the last thing the human/agent wants when a run finishes (final output,
+            // exception, exit). Once stopped, debug_console can't reach it — so surface it here.
+            val console = readConsoleOutput(session, tail = CONSOLE_TAIL_ON_END)
+            if (console != null) {
+                ok("Session #$sessionId ended\n\nconsole:\n$console")
+            } else {
+                ok("Session #$sessionId ended")
+            }
+        }
+        is StepResult.StillRunning -> ok(
+            "Still running — did not pause within ${STEP_TIMEOUT_SECONDS}s.\n\n" +
+                "The session is still executing (no breakpoint reached yet, the request is long-running, " +
+                "or it may be stuck in a loop). Call debug_snapshot once it pauses, or add a breakpoint ahead. " +
+                "The debugger was not interrupted — execution continues."
+        )
         is StepResult.Paused -> {
             val sessionInfo = sessionService.listSessions().firstOrNull {
                 it.id == System.identityHashCode(session).toString()
             }
-            val source = if (includeSource) extractSourceContext(session, sourceService) else null
-            val filtered = if (includeVars) {
-                extractVariables(session, variableService)?.let { filterGlobals(it, includeGlobals) }
+            val frame = resolveFrame(session, stackFrameService, null).first?.frame
+            val source = if (includeSource && frame != null) extractSourceContext(frame, sourceService) else null
+            val filtered = if (includeVars && frame != null) {
+                extractVariables(frame, variableService)?.let { filterGlobals(it, includeGlobals) }
             } else null
             val frames = if (includeStack) extractStackFrames(session, stackFrameService) else null
 
@@ -171,7 +202,7 @@ fun Server.registerNavigationTools(project: Project) {
         )
     ) { request ->
         val action = request.arguments?.get("action")?.jsonPrimitive?.content
-        activityLog.log("debug_step($action)")
+        activityLog.log(formatToolCall("debug_step", request.arguments))
         try {
             if (action == null) return@addTool err("Missing required parameter: action")
 
@@ -217,7 +248,7 @@ fun Server.registerNavigationTools(project: Project) {
             required = listOf("location")
         )
     ) { request ->
-        activityLog.log("debug_run_to_line")
+        activityLog.log(formatToolCall("debug_run_to_line", request.arguments))
         try {
             val location = request.arguments?.get("location")?.jsonPrimitive?.content
                 ?: return@addTool err("Missing required parameter: location")
@@ -259,9 +290,10 @@ fun Server.registerNavigationTools(project: Project) {
                 params.expandStack
             )
 
-            // Detect if we stopped before the requested line (e.g. intermediate breakpoint)
+            // Detect if we stopped before the requested line (e.g. intermediate breakpoint).
+            // Only meaningful when we actually paused — not on session-ended or still-running.
             val currentPos = session.currentPosition
-            val stoppedEarly = currentPos != null && (
+            val stoppedEarly = result is StepResult.Paused && currentPos != null && (
                 currentPos.file.path != file.path || (currentPos.line + 1) != line
             )
             if (stoppedEarly && snapshot.isError != true) {

@@ -157,6 +157,53 @@ class VariableServiceTest {
         assertEquals(case.expected, result)
     }
 
+    // --- pagination / breadth cap ---
+
+    private fun bigArrayTree(count: Int): Map<String, MockVar> {
+        val children = (0 until count).associate { i -> "$i" to MockVar("int", "$i") }
+        return mapOf("big" to MockVar("array", "array($count)", hasChildren = true, children = children))
+    }
+
+    @Test
+    fun `getVariableDetail - default cap truncates wide collections`() {
+        val service = buildDetailService(bigArrayTree(60))
+        val frame = mockk<XStackFrame>()
+        // No explicit limit → DEFAULT_CHILD_LIMIT (50) applies.
+        val result = service.getVariableDetail(frame, "\$big", depth = 1)
+        assertEquals(VariableService.DEFAULT_CHILD_LIMIT, result.children?.size)
+        assertEquals(60, result.childCount)
+        assertEquals(0, result.childOffset)
+        // The formatter surfaces the remaining count as a pagination hint.
+        val text = formatVariableDetail(result, "\$big")
+        assertEquals(true, text.contains("... 10 more children (use offset/limit to paginate)"))
+    }
+
+    @Test
+    fun `getVariableDetail - offset and limit page through a collection`() {
+        val service = buildDetailService(bigArrayTree(60))
+        val frame = mockk<XStackFrame>()
+        val result = service.getVariableDetail(frame, "\$big", depth = 1, offset = 10, limit = 5)
+        assertEquals(5, result.children?.size)
+        assertEquals("10", result.children?.first()?.name)
+        assertEquals("14", result.children?.last()?.name)
+        assertEquals(60, result.childCount)
+        assertEquals(10, result.childOffset)
+        // 60 total - offset 10 - shown 5 = 45 remaining beyond this window.
+        val text = formatVariableDetail(result, "\$big")
+        assertEquals(true, text.contains("... 45 more children (use offset/limit to paginate)"))
+    }
+
+    @Test
+    fun `getVariableDetail - limit covering all children shows no pagination hint`() {
+        val service = buildDetailService(bigArrayTree(20))
+        val frame = mockk<XStackFrame>()
+        val result = service.getVariableDetail(frame, "\$big", depth = 1, offset = 0, limit = 50)
+        assertEquals(20, result.children?.size)
+        assertEquals(null, result.childCount)
+        val text = formatVariableDetail(result, "\$big")
+        assertEquals(false, text.contains("more children"))
+    }
+
     @Test
     fun `isObjectType - scalars and arrays are not objects`() {
         listOf("array", "array[7]", "array[0]", "int", "string", "string[25]", "float", "bool", "null", "Array", "STRING").forEach {

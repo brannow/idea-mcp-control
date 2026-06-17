@@ -95,11 +95,12 @@ internal fun handleBreakpointAdd(
         val highlights = mapOf(result.breakpoint.id to "new")
         val allLine = service.listBreakpoints()
         val allException = service.listExceptionBreakpoints()
-        return ok(formatCombinedBreakpointList(allLine, allException, activeLocation, highlights))
+        val listBody = formatCombinedBreakpointList(allLine, allException, activeLocation, highlights)
+        return ok(decorateAddResponse(listOf(result), listBody, service))
     }
 
     // Multi-add
-    val highlights = mutableMapOf<String, String>()
+    val results = mutableListOf<AddBreakpointResult>()
     val errors = mutableListOf<String>()
 
     for (loc in locations) {
@@ -109,8 +110,7 @@ internal fun handleBreakpointAdd(
             continue
         }
         try {
-            val result = service.addBreakpoint(parsed.first, parsed.second, condition, logExpression, suspend)
-            highlights[result.breakpoint.id] = "new"
+            results.add(service.addBreakpoint(parsed.first, parsed.second, condition, logExpression, suspend))
         } catch (e: ProcessCanceledException) {
             throw e
         } catch (e: Exception) {
@@ -118,21 +118,58 @@ internal fun handleBreakpointAdd(
         }
     }
 
-    if (highlights.isEmpty() && errors.isNotEmpty()) {
+    if (results.isEmpty() && errors.isNotEmpty()) {
         return err(errors.joinToString("\n"))
     }
 
+    val highlights = results.associate { it.breakpoint.id to "new" }
     val allLine = service.listBreakpoints()
     val allException = service.listExceptionBreakpoints()
-    val text = StringBuilder()
+    val middle = StringBuilder()
 
     if (errors.isNotEmpty()) {
-        text.append(errors.joinToString("\n"))
-        text.append("\n\nCurrent breakpoints:\n")
+        middle.append(errors.joinToString("\n"))
+        middle.append("\n\nCurrent breakpoints:\n")
+    }
+    middle.append(formatCombinedBreakpointList(allLine, allException, activeLocation, highlights))
+
+    return ok(decorateAddResponse(results, middle.toString(), service))
+}
+
+/**
+ * Wrap the breakpoint-list body of an add response with:
+ *  - a top note for each breakpoint slid off a method-definition line to the first statement, and
+ *  - a bottom "proof of placement" excerpt (`#ID → <source line>`) for each new breakpoint,
+ *    confirming the breakpoint landed on the line the agent meant.
+ */
+private fun decorateAddResponse(
+    results: List<AddBreakpointResult>,
+    listBody: String,
+    service: BreakpointService
+): String {
+    val sb = StringBuilder()
+
+    val slides = results.filter { it.slidFrom != null }
+    for (r in slides) {
+        sb.append(
+            "Line ${r.slidFrom} in ${r.breakpoint.file} is a method definition — set a line breakpoint " +
+                "at line ${r.breakpoint.line} (the method's first statement) instead. " +
+                "For a true method breakpoint, add it via PhpStorm's gutter.\n"
+        )
+    }
+    if (slides.isNotEmpty()) sb.append("\n")
+
+    sb.append(listBody)
+
+    val excerpts = results.mapNotNull { r ->
+        val excerpt = service.getLineExcerpt(r.breakpoint.file, r.breakpoint.line) ?: return@mapNotNull null
+        "#${r.breakpoint.id} → $excerpt"
+    }
+    if (excerpts.isNotEmpty()) {
+        sb.append("\n\n").append(excerpts.joinToString("\n"))
     }
 
-    text.append(formatCombinedBreakpointList(allLine, allException, activeLocation, highlights))
-    return ok(text.toString())
+    return sb.toString()
 }
 
 internal fun handleBreakpointUpdate(
@@ -265,7 +302,7 @@ fun Server.registerBreakpointTools(project: Project) {
         )
     ) { request ->
         val fileFilter = request.arguments?.get("file")?.jsonPrimitive?.content
-        activityLog.log("breakpoint_list" + if (fileFilter != null) " (file: $fileFilter)" else "")
+        activityLog.log(formatToolCall("breakpoint_list", request.arguments))
         try {
             handleBreakpointList(service, fileFilter, getActiveDebugLocation(project))
         } catch (e: ProcessCanceledException) {
@@ -312,7 +349,7 @@ fun Server.registerBreakpointTools(project: Project) {
         val logExpression = request.arguments?.get("log_expression")?.jsonPrimitive?.content
         val suspend = request.arguments?.get("suspend")?.jsonPrimitive?.content?.toBooleanStrictOrNull() ?: true
 
-        activityLog.log("breakpoint_add $location")
+        activityLog.log(formatToolCall("breakpoint_add", request.arguments))
         try {
             handleBreakpointAdd(service, location, condition, logExpression, suspend, getActiveDebugLocation(project))
         } catch (e: ProcessCanceledException) {
@@ -368,7 +405,7 @@ fun Server.registerBreakpointTools(project: Project) {
         val logExpression = request.arguments?.get("log_expression")?.jsonPrimitive?.content
         val suspend = request.arguments?.get("suspend")?.jsonPrimitive?.content?.toBooleanStrictOrNull() ?: true
 
-        activityLog.log("breakpoint_add_exception $className")
+        activityLog.log(formatToolCall("breakpoint_add_exception", request.arguments))
         try {
             handleBreakpointAddException(service, className, condition, logExpression, suspend)
         } catch (e: ProcessCanceledException) {
@@ -421,7 +458,7 @@ fun Server.registerBreakpointTools(project: Project) {
         val logExpression = request.arguments?.get("log_expression")?.jsonPrimitive?.content
         val suspend = request.arguments?.get("suspend")?.jsonPrimitive?.content?.toBooleanStrictOrNull()
 
-        activityLog.log("breakpoint_update $id")
+        activityLog.log(formatToolCall("breakpoint_update", request.arguments))
         try {
             handleBreakpointUpdate(service, id, enabled, condition, logExpression, suspend, getActiveDebugLocation(project))
         } catch (e: ProcessCanceledException) {
@@ -459,7 +496,7 @@ fun Server.registerBreakpointTools(project: Project) {
         val ids = idParam?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() }
         val all = request.arguments?.get("all")?.jsonPrimitive?.content?.toBooleanStrictOrNull() ?: false
 
-        activityLog.log(if (all) "breakpoint_remove (all)" else "breakpoint_remove ${ids?.joinToString()}")
+        activityLog.log(formatToolCall("breakpoint_remove", request.arguments))
         try {
             val activeLocation = getActiveDebugLocation(project)
             handleBreakpointRemove(service, ids, all, activeLocation)

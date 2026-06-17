@@ -55,7 +55,9 @@ data class PhpClassInfo(val shortName: String, val fqcn: String)
 
 data class AddBreakpointResult(
     val breakpoint: BreakpointInfo,
-    val existingBreakpoints: List<BreakpointInfo> = emptyList()
+    val existingBreakpoints: List<BreakpointInfo> = emptyList(),
+    /** Original line the agent asked for, when the breakpoint was slid off a method-definition line. */
+    val slidFrom: Int? = null
 )
 
 data class RemoveBreakpointsResult(
@@ -86,6 +88,10 @@ class BreakpointService(private val project: Project) {
         fun getLineCount(file: VirtualFile): Int
         fun isLibrary(file: VirtualFile): Boolean
         fun isMethodBreakpointLine(file: VirtualFile, line: Int): Boolean
+        fun findMethodBreakpointType(): XLineBreakpointType<*>?
+        fun canPutLineBreakpoint(file: VirtualFile, line: Int): Boolean
+        fun findFirstExecutableLine(file: VirtualFile, fromLine: Int): Int?
+        fun getLineText(file: VirtualFile, line: Int): String?
         fun <T> readAction(action: () -> T): T
         fun <T> runOnEdt(action: () -> T): T
 
@@ -102,8 +108,16 @@ class BreakpointService(private val project: Project) {
             XDebuggerManager.getInstance(project).breakpointManager
 
         override fun findLineBreakpointType(): XLineBreakpointType<*>? {
+            // Exclude the method type — "php-method" also contains "php", and if it sorts first
+            // we'd hand back the method type for ordinary line adds.
             return XDebuggerUtil.getInstance().lineBreakpointTypes.firstOrNull {
-                it.id.contains("php", ignoreCase = true)
+                it.id.contains("php", ignoreCase = true) && !it.id.contains("method", ignoreCase = true)
+            }
+        }
+
+        override fun findMethodBreakpointType(): XLineBreakpointType<*>? {
+            return XDebuggerUtil.getInstance().lineBreakpointTypes.firstOrNull {
+                it.id.contains("php", ignoreCase = true) && it.id.contains("method", ignoreCase = true)
             }
         }
 
@@ -124,10 +138,43 @@ class BreakpointService(private val project: Project) {
         }
 
         override fun isMethodBreakpointLine(file: VirtualFile, line: Int): Boolean {
-            val methodType = XDebuggerUtil.getInstance().lineBreakpointTypes.firstOrNull {
-                it.id.contains("php", ignoreCase = true) && it.id.contains("method", ignoreCase = true)
-            } ?: return false
+            val methodType = findMethodBreakpointType() ?: return false
             return methodType.canPutAt(file, line, project)
+        }
+
+        /** Whether a normal line breakpoint is legal here — the same check PhpStorm's gutter uses. */
+        override fun canPutLineBreakpoint(file: VirtualFile, line: Int): Boolean {
+            val lineType = findLineBreakpointType() ?: return false
+            return lineType.canPutAt(file, line, project)
+        }
+
+        /**
+         * From a method/function definition line, find the first body line where a normal line
+         * breakpoint sticks AND that carries a real statement — skipping the opening `{` (which
+         * `canPutAt` accepts but is useless to break on) and blank lines. Returns a 0-based line.
+         */
+        override fun findFirstExecutableLine(file: VirtualFile, fromLine: Int): Int? {
+            val lineType = findLineBreakpointType() ?: return null
+            val methodType = findMethodBreakpointType()
+            val doc = FileDocumentManager.getInstance().getDocument(file) ?: return null
+            for (l in (fromLine + 1) until doc.lineCount) {
+                val isMethodLine = methodType?.canPutAt(file, l, project) ?: false
+                if (isMethodLine || !lineType.canPutAt(file, l, project)) continue
+                val text = doc.getText(
+                    com.intellij.openapi.util.TextRange(doc.getLineStartOffset(l), doc.getLineEndOffset(l))
+                ).trim()
+                if (text.isEmpty() || text == "{" || text == "}") continue
+                return l
+            }
+            return null
+        }
+
+        override fun getLineText(file: VirtualFile, line: Int): String? {
+            val doc = FileDocumentManager.getInstance().getDocument(file) ?: return null
+            if (line < 0 || line >= doc.lineCount) return null
+            val start = doc.getLineStartOffset(line)
+            val end = doc.getLineEndOffset(line)
+            return doc.getText(com.intellij.openapi.util.TextRange(start, end))
         }
 
         override fun <T> readAction(action: () -> T): T {
@@ -301,8 +348,8 @@ class BreakpointService(private val project: Project) {
         logExpression: String? = null,
         suspend: Boolean = true
     ): AddBreakpointResult {
-        val (type, virtualFile, existing) = platform.readAction {
-            val type = platform.findLineBreakpointType()
+        val resolved = platform.readAction {
+            val lineType = platform.findLineBreakpointType()
                 ?: throw IllegalStateException("PHP line breakpoint type not available. Is the PHP plugin active?")
 
             val virtualFile = platform.resolveFile(file)
@@ -317,23 +364,40 @@ class BreakpointService(private val project: Project) {
                 throw IllegalArgumentException("Line $line is beyond end of file ($file has $lineCount lines)")
             }
 
-            if (platform.isMethodBreakpointLine(virtualFile, line - 1)) {
-                throw IllegalArgumentException(
-                    "Line $line in $file is a method/function definition. " +
-                        "Method breakpoints are not supported via MCP — ask the user to add it manually in PhpStorm."
-                )
+            // Decide the target line, mirroring PhpStorm's gutter via canPutAt:
+            //  - method/function definition line → slide down to the body's first real statement
+            //    (we can't safely create a true php-method breakpoint via the API — doing so with
+            //    null properties produced a nameless breakpoint that froze the IDE's EDT). A line
+            //    breakpoint on the first statement reliably breaks on entry.
+            //  - otherwise → a line breakpoint, but only if canPutAt says it's a legal location.
+            //    Skipping that check is what created ghost breakpoints on const/blank/comment lines.
+            val zeroLine = line - 1
+            var effectiveLine = line
+            var slidFrom: Int? = null
+            when {
+                platform.isMethodBreakpointLine(virtualFile, zeroLine) -> {
+                    val slid = platform.findFirstExecutableLine(virtualFile, zeroLine)
+                        ?: throw IllegalArgumentException(
+                            "Line $line in $file is a method/function definition with no executable " +
+                                "statement to break on. Add a method breakpoint via PhpStorm's gutter instead."
+                        )
+                    effectiveLine = slid + 1
+                    slidFrom = line
+                }
+                platform.canPutLineBreakpoint(virtualFile, zeroLine) -> { /* use line as-is */ }
+                else -> throw IllegalArgumentException(notPlaceableMessage(file, line, virtualFile, lineCount))
             }
 
-            Triple(type, virtualFile, findBreakpointsAtLine(virtualFile, line - 1))
+            ResolvedAdd(lineType, virtualFile, effectiveLine, slidFrom, findBreakpointsAtLine(virtualFile, effectiveLine - 1))
         }
 
-        val fileUrl = virtualFile.url
-        val zeroBasedLine = line - 1
+        val fileUrl = resolved.file.url
+        val zeroBasedLine = resolved.effectiveLine - 1
 
         val info = platform.runOnEdt {
             @Suppress("UNCHECKED_CAST")
             val bp = platform.getBreakpointManager().addLineBreakpoint(
-                type as XLineBreakpointType<Nothing>,
+                resolved.type as XLineBreakpointType<Nothing>,
                 fileUrl,
                 zeroBasedLine,
                 null
@@ -354,8 +418,43 @@ class BreakpointService(private val project: Project) {
 
         return AddBreakpointResult(
             breakpoint = info,
-            existingBreakpoints = existing
+            existingBreakpoints = resolved.existing,
+            slidFrom = resolved.slidFrom
         )
+    }
+
+    /**
+     * Build a "not a valid breakpoint location" error and point the agent at the nearest line below
+     * where a breakpoint *can* go, so it doesn't have to guess — the same `canPutAt` scan the gutter
+     * uses. Note: PhpStorm allows breakpoints on most lines (declarations, attributes, braces);
+     * only blank lines, comments, and const initializers are genuinely rejected — so the message
+     * leans on "PhpStorm won't accept it here either" rather than naming a category that's often wrong.
+     */
+    private fun notPlaceableMessage(file: String, line: Int, virtualFile: VirtualFile, lineCount: Int): String {
+        val suggestion = ((line until lineCount).firstOrNull { l ->
+            platform.isMethodBreakpointLine(virtualFile, l) || platform.canPutLineBreakpoint(virtualFile, l)
+        })?.let { it + 1 } // 0-based loop index → 1-based line
+        val tail = if (suggestion != null) " Try line $suggestion (the nearest line that accepts one)." else ""
+        return "Line $line in $file is not a valid breakpoint location — " +
+            "PhpStorm won't place a breakpoint here either (e.g. a blank line, comment, or const declaration)." + tail
+    }
+
+    /** Internal carrier for the resolved add target (after a possible method-line slide). */
+    private data class ResolvedAdd(
+        val type: XLineBreakpointType<*>,
+        val file: VirtualFile,
+        val effectiveLine: Int,
+        val slidFrom: Int?,
+        val existing: List<BreakpointInfo>
+    )
+
+    /**
+     * Read a single source line (trimmed) for a breakpoint's location — used to show a
+     * "proof of placement" excerpt next to newly added breakpoints. Null when unavailable.
+     */
+    fun getLineExcerpt(file: String, line: Int): String? = platform.readAction {
+        val vf = platform.resolveFile(file) ?: return@readAction null
+        platform.getLineText(vf, line - 1)?.trim()?.takeIf { it.isNotEmpty() }
     }
 
     // ================================================================
