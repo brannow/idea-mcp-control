@@ -57,9 +57,13 @@ intellijPlatform {
         id = providers.gradleProperty("pluginGroup").get()
         name = providers.gradleProperty("pluginName").get()
         version = providers.gradleProperty("pluginVersion").get()
+        // This is the 2025.3 maintenance line. It exists because the 0.7.0 runtime stack
+        // (ktor 3.5 / MCP SDK 0.13 / Kotlin 2.3, built against 2026.1.3) fails to start the
+        // embedded server on build 253 — see the 253 notes in CLAUDE.md. Keep the ceiling at
+        // 253.* so Marketplace never serves this build to a 2026.1+ IDE, which gets 0.7.1+.
         ideaVersion {
             sinceBuild = "253"
-            untilBuild = "261.*"
+            untilBuild = "253.*"
         }
     }
 }

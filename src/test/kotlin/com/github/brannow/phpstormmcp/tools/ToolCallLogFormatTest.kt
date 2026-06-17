@@ -35,13 +35,23 @@ class ToolCallLogFormatTest {
     }
 
     @Test
-    fun `long values are truncated with ellipsis`() {
-        val long = "x".repeat(300)
+    fun `realistic argument lists log in full`() {
+        // A multi-location breakpoint_add arg (~250 chars) must not be truncated under the generous cap.
+        val locations = (1..6).joinToString(", ") { "src/Billing/PriceCalculator.php:$it" }
+        val args = buildJsonObject { put("location", locations) }
+        val out = formatToolCall("breakpoint_add", args)
+        assertEquals("breakpoint_add(location=$locations)", out)
+        assertTrue(!out.contains("…"), "expected no truncation, got: $out")
+    }
+
+    @Test
+    fun `pathological multi-KB values are truncated with ellipsis`() {
+        val long = "x".repeat(5000)
         val args = buildJsonObject { put("expression", long) }
         val out = formatToolCall("debug_evaluate", args)
         assertTrue(out.contains("…"), "expected ellipsis, got: $out")
         assertTrue(out.endsWith("…)"), "expected truncated value before closing paren, got: $out")
-        // tool name + "expression=" + 120-char-capped value + ")" — well under the raw 300 chars
-        assertTrue(out.length < 160, "expected truncation, length was ${out.length}")
+        // tool name + "expression=" + 2000-char-capped value + ")" — well under the raw 5000 chars
+        assertTrue(out.length < 2100, "expected truncation, length was ${out.length}")
     }
 }
