@@ -10,7 +10,10 @@ import kotlinx.serialization.json.JsonPrimitive
 
 // --- Activity-log formatting ---
 
-private const val MAX_LOG_VALUE_LEN = 120
+// Generous per-value cap: realistic arguments (location lists, conditions, ordinary eval
+// expressions) log in full; only a pathological multi-KB paste gets trimmed. Set higher /
+// remove the guard in renderLogValue if you want a truly unbounded transcript.
+private const val MAX_LOG_VALUE_LEN = 2000
 
 /**
  * Render a tool call for the PhpStorm activity log as `name(arg=value, ...)` so the human
@@ -18,7 +21,8 @@ private const val MAX_LOG_VALUE_LEN = 120
  * actually explains the agent's behavior. Centralized so every tool logs consistently
  * (previously each call site hand-formatted, and half omitted args entirely).
  *
- * Long values (e.g. a big eval expression) are truncated; this is a glanceable log, not a transcript.
+ * Values log in full up to a generous cap (MAX_LOG_VALUE_LEN); only a pathological multi-KB
+ * argument is trimmed, so the line stays a log entry rather than a transcript dump.
  */
 fun formatToolCall(name: String, args: JsonObject?): String {
     if (args.isNullOrEmpty()) return name

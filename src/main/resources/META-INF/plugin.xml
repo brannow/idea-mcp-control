@@ -3,6 +3,17 @@
     <name>MCP Control</name>
     <vendor url="https://github.com/brannow/idea-mcp-control">Benjamin Rannow</vendor>
     <change-notes><![CDATA[
+        <b>0.7.0</b>
+        <ul>
+            <li>Method breakpoints now supported: adding a breakpoint on a method/function definition line creates a real PHP method breakpoint on that line (same as PhpStorm's gutter "Method" option). Trait/interface/anonymous-class methods fall back to a line breakpoint on the first statement</li>
+            <li>Pagination: debug_evaluate and debug_variable_detail cap each node at 50 children and accept offset/limit to page through large arrays/collections; truncated nodes show a "... N more children" hint, so big evals no longer dump in full</li>
+            <li>Frame-aware inspection: debug_evaluate, debug_variable_detail and debug_snapshot now follow the selected stack frame (or an explicit frame_index) instead of always reading the top frame</li>
+            <li>Breaking: debug_inspect_frame removed — use debug_snapshot(frame_index) instead (14 → 13 tools)</li>
+            <li>Breakpoint placement validation: blank/comment/const lines are rejected with the nearest valid line suggested — no more ghost breakpoints that never fire</li>
+            <li>Stepping no longer hangs the request: a bounded 60s wait returns a "still running" result instead of blocking forever</li>
+            <li>Session-ended results now include the session id and a console tail (the last chance to read stdout/stderr from a stopped session)</li>
+            <li>Activity log shows the full tool-call arguments, not just the tool name</li>
+        </ul>
         <b>0.6.1</b>
         <ul>
             <li>Toolchain upgrade: built against PhpStorm 2026.1.3 (still compatible with 2025.3 – 2026.1)</li>
