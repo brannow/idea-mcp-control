@@ -28,7 +28,9 @@ data class VariableNode(
     val value: String,
     val hasChildren: Boolean,
     val children: List<VariableNode>? = null, // null = not expanded
-    val circular: Boolean = false // true = cycle detected, expansion skipped
+    val circular: Boolean = false, // true = cycle detected, expansion skipped
+    val childCount: Int? = null, // total children available when the list was capped (null = not capped / not loaded)
+    val childOffset: Int = 0 // offset applied to this node's children window
 )
 
 class VariablePathException(message: String) : IllegalArgumentException(message)
@@ -159,7 +161,13 @@ class VariableService(private val project: Project) {
      * Evaluate a PHP expression in the current frame's scope.
      * Returns a VariableNode representing the result, expanded to the requested depth.
      */
-    fun evaluateExpression(frame: XStackFrame, expression: String, depth: Int = 0): VariableNode {
+    fun evaluateExpression(
+        frame: XStackFrame,
+        expression: String,
+        depth: Int = 0,
+        offset: Int = 0,
+        limit: Int = DEFAULT_CHILD_LIMIT
+    ): VariableNode {
         val evaluator = frame.evaluator
             ?: throw EvaluationException("Evaluation not supported in this frame")
         val xValue = try {
@@ -177,7 +185,7 @@ class VariableService(private val project: Project) {
         } catch (e: Exception) {
             throw EvaluationException(e.message ?: "Evaluation failed")
         }
-        return expandValue("(eval)", xValue, depth, emptySet())
+        return expandValue("(eval)", xValue, depth, emptySet(), offset, limit)
     }
 
     /**
@@ -230,9 +238,15 @@ class VariableService(private val project: Project) {
      * Path format: "$engine", "$engine.pattern", "$items.0.name"
      * Returns a VariableNode tree expanded to the requested depth.
      */
-    fun getVariableDetail(frame: XStackFrame, path: String, depth: Int = 1): VariableNode {
+    fun getVariableDetail(
+        frame: XStackFrame,
+        path: String,
+        depth: Int = 1,
+        offset: Int = 0,
+        limit: Int = DEFAULT_CHILD_LIMIT
+    ): VariableNode {
         val (name, xValue) = resolvePathToXValue(frame, path)
-        return expandValue(name, xValue, depth, emptySet())
+        return expandValue(name, xValue, depth, emptySet(), offset, limit)
     }
 
     /**
@@ -304,7 +318,14 @@ class VariableService(private val project: Project) {
      * False positives (legitimately nested same-type objects) are rare, and the agent can
      * always bypass detection by drilling with an explicit path.
      */
-    private fun expandValue(name: String, xValue: XValue, depth: Int, ancestorTypes: Set<String>): VariableNode {
+    private fun expandValue(
+        name: String,
+        xValue: XValue,
+        depth: Int,
+        ancestorTypes: Set<String>,
+        offset: Int = 0,
+        limit: Int = DEFAULT_CHILD_LIMIT
+    ): VariableNode {
         val presentation = try {
             platform.computePresentation(xValue)
         } catch (_: Exception) {
@@ -333,10 +354,19 @@ class VariableService(private val project: Project) {
             ancestorTypes
         }
 
+        // Children are expanded with a breadth cap: at most [limit] children starting at [offset].
+        // Without this, a single array[3749] at depth 1 serializes all 3,749 entries (the 96k-char
+        // dump that motivated pagination). [childCount] records the true total so the formatter can
+        // emit a "... N more children" hint; nested levels always use offset 0 + the default cap.
+        var childCount: Int? = null
         val children = if (depth > 0 && presentation.hasChildren) {
             try {
-                val childPairs = platform.computeChildren(xValue)
-                childPairs.map { (childName, childValue) ->
+                val all = platform.computeChildren(xValue)
+                val total = all.size
+                val start = offset.coerceIn(0, total)
+                val window = all.subList(start, minOf(total, start + maxOf(0, limit)))
+                if (total > window.size) childCount = total
+                window.map { (childName, childValue) ->
                     expandValue(childName, childValue, depth - 1, childAncestors)
                 }
             } catch (_: Exception) {
@@ -351,11 +381,20 @@ class VariableService(private val project: Project) {
             type = presentation.type,
             value = presentation.value,
             hasChildren = presentation.hasChildren,
-            children = children
+            children = children,
+            childCount = childCount,
+            childOffset = if (children != null) offset.coerceAtLeast(0) else 0
         )
     }
 
     companion object {
+        /**
+         * Default breadth cap: how many children of a single node are expanded when no
+         * explicit limit is given. Always active so large collections never dump in full.
+         * The agent pages past it with the offset/limit params on evaluate / variable_detail.
+         */
+        const val DEFAULT_CHILD_LIMIT = 50
+
         /**
          * Types that are NOT tracked for cycle detection.
          * Arrays nest legitimately; scalars never have children.

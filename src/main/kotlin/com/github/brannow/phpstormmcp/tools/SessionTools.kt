@@ -105,7 +105,7 @@ fun Server.registerSessionTools(project: Project) {
     ) { request ->
         val all = request.arguments?.get("all")?.jsonPrimitive?.content?.toBooleanStrictOrNull() ?: false
 
-        activityLog.log("session_stop" + if (all) " (all)" else "")
+        activityLog.log(formatToolCall("session_stop", request.arguments))
 
         try {
             handleSessionStop(service, all)

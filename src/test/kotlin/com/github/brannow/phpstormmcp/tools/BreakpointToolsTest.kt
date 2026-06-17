@@ -16,6 +16,8 @@ import io.mockk.mockk
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import io.modelcontextprotocol.kotlin.sdk.types.TextContent
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Test
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.MethodSource
 
@@ -39,7 +41,13 @@ class BreakpointToolsTest {
     @Suppress("UNCHECKED_CAST")
     private fun buildService(
         breakpoints: List<BpState>,
-        knownFiles: Set<String> = breakpoints.map { it.file }.toSet()
+        knownFiles: Set<String> = breakpoints.map { it.file }.toSet(),
+        // 0-based line predicates, so tests can exercise the method-breakpoint, slide and reject paths.
+        isMethodLine: (Int) -> Boolean = { false },
+        canPutLine: (Int) -> Boolean = { true },
+        firstExecutableLine: (Int) -> Int? = { it + 1 },
+        // Non-null → a real method breakpoint is created on the declaration line; null → fallback slide.
+        methodProps: (Int) -> XBreakpointProperties<*>? = { null }
     ): BreakpointService {
         val mockBreakpoints = mutableListOf<XLineBreakpoint<*>>()
         val virtualFiles = mutableMapOf<String, VirtualFile>()
@@ -68,7 +76,12 @@ class BreakpointToolsTest {
         val mockType = mockk<XLineBreakpointType<*>>(relaxed = true)
         every { mockType.id } returns "php-line"
 
-        // addLineBreakpoint: use relaxed mock, then set answer via slot
+        val mockMethodType = mockk<XLineBreakpointType<*>>(relaxed = true)
+        every { mockMethodType.id } returns "php-line-method"
+
+        // addLineBreakpoint: use relaxed mock, then set answer via slot. The created breakpoint's
+        // `method` flag is derived from the breakpoint *type* passed in (id contains "method"),
+        // mirroring how toBreakpointInfo classifies it in production.
         @Suppress("UNCHECKED_CAST")
         val typedManager = manager as XBreakpointManager
         @Suppress("UNCHECKED_CAST")
@@ -80,12 +93,13 @@ class BreakpointToolsTest {
                 any()
             )
         } answers {
+            val type = arg<XLineBreakpointType<*>>(0)
             val fileUrl = arg<String>(1)
             val zeroLine = arg<Int>(2)
             val vf = virtualFiles.values.first { it.url == fileUrl }
             val relativePath = vf.path.removePrefix("/project/")
             val newId = System.nanoTime()
-            val newState = BpState(newId, relativePath, zeroLine + 1)
+            val newState = BpState(newId, relativePath, zeroLine + 1, method = type.id.contains("method", ignoreCase = true))
             val newBp = createMockBreakpoint(newState, vf)
             mockBreakpoints.add(newBp)
             newBp as XLineBreakpoint<XBreakpointProperties<*>>
@@ -107,7 +121,12 @@ class BreakpointToolsTest {
             }
             override fun getLineCount(file: VirtualFile): Int = FILE_LINE_COUNT
             override fun isLibrary(file: VirtualFile): Boolean = file.path.contains("/vendor/")
-            override fun isMethodBreakpointLine(file: VirtualFile, line: Int): Boolean = false
+            override fun isMethodBreakpointLine(file: VirtualFile, line: Int): Boolean = isMethodLine(line)
+            override fun findMethodBreakpointType(): XLineBreakpointType<*>? = mockMethodType
+            override fun createMethodBreakpointProperties(file: VirtualFile, line: Int): XBreakpointProperties<*>? = methodProps(line)
+            override fun canPutLineBreakpoint(file: VirtualFile, line: Int): Boolean = canPutLine(line)
+            override fun findFirstExecutableLine(file: VirtualFile, fromLine: Int): Int? = firstExecutableLine(fromLine)
+            override fun getLineText(file: VirtualFile, line: Int): String? = "// line ${line + 1}"
             override fun <T> readAction(action: () -> T): T = action()
             override fun <T> runOnEdt(action: () -> T): T = action()
 
@@ -242,6 +261,67 @@ class BreakpointToolsTest {
         } catch (e: Exception) {
             assertEquals(case.expectedPattern, e.message)
             assertEquals(true, case.isError)
+        }
+    }
+
+    @Test
+    fun `breakpoint_add on a method-definition line creates a method breakpoint on that line`() {
+        // Line 17 (0-based 16) is a method definition with a resolvable method variant → a real
+        // method breakpoint is created on line 17 itself (no slide).
+        val service = buildService(
+            emptyList(),
+            knownFiles = setOf("src/Foo.php"),
+            isMethodLine = { it == 16 },
+            methodProps = { if (it == 16) mockk(relaxed = true) else null }
+        )
+        val result = handleBreakpointAdd(service, "src/Foo.php:17", null, null, true)
+        val text = resultText(result)
+        assertEquals(false, isError(result))
+        assertTrue(text.contains("src/Foo.php:17 (new, method)"), "expected a method breakpoint on line 17, got: $text")
+        assertTrue(!text.contains("method definition"), "should not emit the slide note, got: $text")
+    }
+
+    @Test
+    fun `breakpoint_add on a method-definition line falls back to sliding when no method variant`() {
+        // Line 17 (0-based 16) is a method definition but the method variant can't build properties
+        // (e.g. trait/interface) → fall back to a line breakpoint on the first statement (0-based 18 → 19).
+        val service = buildService(
+            emptyList(),
+            knownFiles = setOf("src/Foo.php"),
+            isMethodLine = { it == 16 },
+            firstExecutableLine = { if (it == 16) 18 else it + 1 },
+            methodProps = { null }
+        )
+        val result = handleBreakpointAdd(service, "src/Foo.php:17", null, null, true)
+        val text = resultText(result)
+        assertEquals(false, isError(result))
+        assertTrue(
+            text.startsWith("Line 17 in src/Foo.php is a method definition — set a line breakpoint at line 19 (the method's first statement) instead."),
+            "expected slide note, got: $text"
+        )
+        assertTrue(text.contains("src/Foo.php:19 (new)"), "expected the breakpoint at the slid line, got: $text")
+    }
+
+    @Test
+    fun `breakpoint_add on a non-placeable line is rejected with a suggestion`() {
+        // Line 9 (0-based 8) is a const/blank line: not a method line and canPutAt is false.
+        // The next placeable line is 0-based 16 → line 17.
+        val service = buildService(
+            emptyList(),
+            knownFiles = setOf("src/Foo.php"),
+            isMethodLine = { it == 16 },
+            canPutLine = { it >= 18 }
+        )
+        try {
+            handleBreakpointAdd(service, "src/Foo.php:9", null, null, true)
+            throw AssertionError("expected a rejection for a non-placeable line")
+        } catch (e: IllegalArgumentException) {
+            val msg = e.message ?: ""
+            assertTrue(
+                msg.startsWith("src/Foo.php:9 is not a breakpoint location — no executable code there."),
+                "expected not-placeable message, got: $msg"
+            )
+            assertTrue(msg.contains("Try line 17"), "expected nearest-line suggestion, got: $msg")
         }
     }
 
@@ -544,13 +624,13 @@ class BreakpointToolsTest {
                 breakpoints = emptyList(),
                 knownFiles = setOf("src/index.php"),
                 location = "src/index.php:15",
-                expectedPattern = "#{ID} src/index.php:15 (new)",
+                expectedPattern = "#{ID} src/index.php:15 (new)\n\n#{ID} → // line 15",
             ),
             AddCase(
                 name = "add to line with no existing breakpoints",
                 breakpoints = listOf(BP_INDEX_5),
                 location = "src/index.php:15",
-                expectedPattern = "#100 src/index.php:5\n#{ID} src/index.php:15 (new)",
+                expectedPattern = "#100 src/index.php:5\n#{ID} src/index.php:15 (new)\n\n#{ID} → // line 15",
             ),
             AddCase(
                 name = "add to line with existing breakpoints → grouped",
@@ -559,7 +639,7 @@ class BreakpointToolsTest {
                 expectedPattern = "src/WorldClass.php:13 (multi-breakpoint-line)\n" +
                     " - #102\n" +
                     " - #103 (condition: \$foo === '')\n" +
-                    " - #{ID} (new)",
+                    " - #{ID} (new)\n\n#{ID} → // line 13",
             ),
             AddCase(
                 name = "add with condition",
@@ -567,7 +647,7 @@ class BreakpointToolsTest {
                 knownFiles = setOf("src/index.php"),
                 location = "src/index.php:15",
                 condition = "\$count > 10",
-                expectedPattern = "#{ID} src/index.php:15 (new, condition: \$count > 10)",
+                expectedPattern = "#{ID} src/index.php:15 (new, condition: \$count > 10)\n\n#{ID} → // line 15",
             ),
             AddCase(
                 name = "add with log expression",
@@ -575,7 +655,7 @@ class BreakpointToolsTest {
                 knownFiles = setOf("src/index.php"),
                 location = "src/index.php:15",
                 logExpression = "\$request->getUri()",
-                expectedPattern = "#{ID} src/index.php:15 (new, log: \$request->getUri())",
+                expectedPattern = "#{ID} src/index.php:15 (new, log: \$request->getUri())\n\n#{ID} → // line 15",
             ),
             AddCase(
                 name = "add with no suspend",
@@ -583,7 +663,7 @@ class BreakpointToolsTest {
                 knownFiles = setOf("src/index.php"),
                 location = "src/index.php:15",
                 suspend = false,
-                expectedPattern = "#{ID} src/index.php:15 (new, no suspend)",
+                expectedPattern = "#{ID} src/index.php:15 (new, no suspend)\n\n#{ID} → // line 15",
             ),
             AddCase(
                 name = "add with all options",
@@ -593,7 +673,7 @@ class BreakpointToolsTest {
                 condition = "\$x > 0",
                 logExpression = "\$x",
                 suspend = false,
-                expectedPattern = "#{ID} src/index.php:15 (new, condition: \$x > 0, log: \$x, no suspend)",
+                expectedPattern = "#{ID} src/index.php:15 (new, condition: \$x > 0, log: \$x, no suspend)\n\n#{ID} → // line 15",
             ),
 
             // --- Multi-add (comma-separated locations) ---
@@ -602,28 +682,28 @@ class BreakpointToolsTest {
                 breakpoints = emptyList(),
                 knownFiles = setOf("src/index.php", "src/WorldClass.php"),
                 location = "src/index.php:15, src/WorldClass.php:13",
-                expectedPattern = "#{ID1} src/index.php:15 (new)\n#{ID2} src/WorldClass.php:13 (new)",
+                expectedPattern = "#{ID1} src/index.php:15 (new)\n#{ID2} src/WorldClass.php:13 (new)\n\n#{ID1} → // line 15\n#{ID2} → // line 13",
             ),
             AddCase(
                 name = "multi-add three locations same file",
                 breakpoints = emptyList(),
                 knownFiles = setOf("src/WorldClass.php"),
                 location = "src/WorldClass.php:22, src/WorldClass.php:17, src/WorldClass.php:15",
-                expectedPattern = "#{ID1} src/WorldClass.php:22 (new)\n#{ID2} src/WorldClass.php:17 (new)\n#{ID3} src/WorldClass.php:15 (new)",
+                expectedPattern = "#{ID1} src/WorldClass.php:22 (new)\n#{ID2} src/WorldClass.php:17 (new)\n#{ID3} src/WorldClass.php:15 (new)\n\n#{ID1} → // line 22\n#{ID2} → // line 17\n#{ID3} → // line 15",
             ),
             AddCase(
                 name = "multi-add with existing breakpoints",
                 breakpoints = listOf(BP_INDEX_5),
                 knownFiles = setOf("src/index.php", "src/WorldClass.php"),
                 location = "src/index.php:15, src/WorldClass.php:13",
-                expectedPattern = "#100 src/index.php:5\n#{ID1} src/index.php:15 (new)\n#{ID2} src/WorldClass.php:13 (new)",
+                expectedPattern = "#100 src/index.php:5\n#{ID1} src/index.php:15 (new)\n#{ID2} src/WorldClass.php:13 (new)\n\n#{ID1} → // line 15\n#{ID2} → // line 13",
             ),
             AddCase(
                 name = "multi-add partial failure",
                 breakpoints = emptyList(),
                 knownFiles = setOf("src/index.php"),
                 location = "src/index.php:15, src/nonExistent.php:10",
-                expectedPattern = "src/nonExistent.php:10: File not found: src/nonExistent.php\n\nCurrent breakpoints:\n#{ID} src/index.php:15 (new)",
+                expectedPattern = "src/nonExistent.php:10: File not found: src/nonExistent.php\n\nCurrent breakpoints:\n#{ID} src/index.php:15 (new)\n\n#{ID} → // line 15",
             ),
             AddCase(
                 name = "multi-add all invalid",
