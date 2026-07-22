@@ -3,11 +3,12 @@
     <name>MCP Control</name>
     <vendor url="https://github.com/brannow/idea-mcp-control">Benjamin Rannow</vendor>
     <change-notes><![CDATA[
-        <b>0.7.1</b>
+        <b>2026.1.1</b>
         <ul>
-            <li>Fixed compatibility declaration: 0.7.0 claimed support for PhpStorm 2025.3 but the MCP server could not start there — the toolbar showed the server as running while nothing was listening. 0.7.1 requires PhpStorm 2026.1 or newer, which is what it is actually built against</li>
-            <li>PhpStorm 2025.3 users: install MCP Control 0.6.1, which has the same tool features built against the 2025.3 platform</li>
-            <li>Raised the supported ceiling to PhpStorm 2026.2</li>
+            <li>Versions now track the PhpStorm line they serve. This release requires PhpStorm 2026.1 or newer and replaces 0.7.x; PhpStorm 2025.1 – 2025.3 is served by the 2025.3.x releases</li>
+            <li>Fixed compatibility declaration: 0.7.0 claimed support for PhpStorm 2025.3 but the MCP server could not start there — the toolbar showed the server as running while nothing was listening. This release requires 2026.1 or newer, which is what it is actually built against</li>
+            <li>PhpStorm 2025.1 – 2025.3 users: install MCP Control 2025.3.1, which has the same tool features built against the 2025.3 platform</li>
+            <li>No upper version limit any more: new PhpStorm releases are supported on day one instead of waiting for a compatibility republish</li>
             <li>The tool window no longer claims the server is running before it is: a start attempt now shows "Starting…", turns into "Running" only once the engine reports a bound port, and shows "Failed: &lt;reason&gt;" if it doesn't. Start/Stop follow that state instead of guessing from an internal object</li>
             <li>Start failures are no longer swallowed. The real exception is written to idea.log and shown in the notification, and a failure is only reported as a port conflict when it actually is one — previously every failure claimed "port already in use"</li>
         </ul>

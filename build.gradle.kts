@@ -69,16 +69,29 @@ intellijPlatform {
         id = providers.gradleProperty("pluginGroup").get()
         name = providers.gradleProperty("pluginName").get()
         version = providers.gradleProperty("pluginVersion").get()
-        // 0.7.0 shipped with sinceBuild 253 and did not work there: the embedded MCP server
-        // never bound on build 253 because the bundled runtime stack (ktor 3.5, MCP SDK 0.13,
-        // kotlinx-coroutines 1.11, Kotlin stdlib 2.3) is a 2026.1 stack. verifyPlugin reported
+        // FLOOR (261): 0.7.0 shipped with sinceBuild 253 and did not work there — the embedded MCP
+        // server never bound on build 253, because the bundled runtime stack (ktor 3.5, MCP SDK
+        // 0.13, kotlinx-coroutines 1.11, Kotlin stdlib 2.3) is a 2026.1 stack. verifyPlugin said
         // "Compatible" because it only checks OUR bytecode against the platform API — it never
-        // loads a class or exercises the bundled libraries, so this whole class of break is
-        // invisible to it. 261 is therefore the honest floor: it matches what we build against.
-        // 2025.3 users are served the 0.6.x maintenance line (branch maintenance/2025.3).
+        // loads a class or exercises the bundled libraries, so that whole class of break is
+        // invisible to it. 261 is the honest floor: it matches what we build against. PhpStorm
+        // 2025.1 - 2025.3 is served by the `2025.x` branch (versions 2025.3.x).
+        //
+        // CEILING (open): omitted deliberately, so a new PhpStorm release does not strand users on
+        // day one waiting for a republish. This is the JetBrains-recommended default, but it comes
+        // with a real obligation for THIS plugin, which does not stay on public API:
+        //   - it creates PHP method breakpoints via `php-line-method`, a type found by decompiling
+        //     the PHP plugin, so it can change on any release with no deprecation cycle;
+        //   - it bundles its own runtime stack (ktor, MCP SDK, coroutines, slf4j), which is
+        //     exactly what collided with the platform on 253.
+        // An open ceiling turns those into SILENT breakage rather than an "incompatible" badge.
+        // The obligation: launch runIde against each new major/EAP before it ships (see the
+        // runIde* tasks below). If one breaks, set until-build on the affected published version
+        // in the Marketplace UI — compatibility of an uploaded build is editable after the fact,
+        // which is what makes "open until proven otherwise" recoverable rather than a gamble.
         ideaVersion {
             sinceBuild = "261"
-            untilBuild = "262.*"
+            untilBuild = provider { null }
         }
     }
 
@@ -93,6 +106,29 @@ intellijPlatform {
                 sinceBuild = "261"
                 untilBuild = "261.*"
             }
+        }
+    }
+}
+
+// One launchable IDE per supported major. With an open ceiling these are not optional: nothing
+// else can tell us a new PhpStorm broke the plugin, because verifyPlugin never loads the bundled
+// ktor/coroutines/MCP-SDK stack -- which is precisely how 0.7.0 shipped green and then failed to
+// bind its server on 253. Before cutting a release, and whenever a new major reaches EAP, launch
+// it here and confirm the MCP server actually reaches "Running".
+//
+// Add a new register(...) as each major appears rather than widening a ceiling. Separate sandboxes
+// keep a warm cache in one from masking a first-run failure in another.
+intellijPlatformTesting {
+    runIde {
+        register("runIde261") {
+            type = org.jetbrains.intellij.platform.gradle.IntelliJPlatformType.PhpStorm
+            version = "2026.1"
+            sandboxDirectory = layout.buildDirectory.dir("idea-sandbox-261")
+        }
+        register("runIde262") {
+            type = org.jetbrains.intellij.platform.gradle.IntelliJPlatformType.PhpStorm
+            version = "2026.2"
+            sandboxDirectory = layout.buildDirectory.dir("idea-sandbox-262")
         }
     }
 }

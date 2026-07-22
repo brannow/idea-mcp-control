@@ -1,10 +1,12 @@
 name: Test
 
+# Both lines are released independently, so both need CI. For pull_request the workflow is taken
+# from the base branch, so this list has to name 2025.x here too, not only on that branch.
 on:
   push:
-    branches: [ main ]
+    branches: [ main, '2025.x' ]
   pull_request:
-    branches: [ main ]
+    branches: [ main, '2025.x' ]
 
 jobs:
   test:
