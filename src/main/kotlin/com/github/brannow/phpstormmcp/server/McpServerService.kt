@@ -312,11 +312,8 @@ class McpServerService(private val project: Project) : Disposable {
         return transport
     }
 
-    private fun pluginVersion(): String {
-        return com.intellij.ide.plugins.PluginManagerCore.getPlugin(
-            com.intellij.openapi.extensions.PluginId.getId("com.github.brannow.phpstormmcp")
-        )?.version ?: "unknown"
-    }
+    // Baked in at build time -- see generatePluginVersion in build.gradle.kts.
+    private fun pluginVersion(): String = com.github.brannow.phpstormmcp.PLUGIN_VERSION
 
     private fun createMcpServer(): Server {
         return Server(

@@ -3,9 +3,10 @@
     <name>MCP Control</name>
     <vendor url="https://github.com/brannow/idea-mcp-control">Benjamin Rannow</vendor>
     <change-notes><![CDATA[
-        <b>2026.2.1</b>
+        <b>2026.2.2</b>
         <ul>
             <li>Versions now name the newest PhpStorm release this build has been verified against — 2026.2. It requires PhpStorm 2026.1 or newer and replaces 0.7.x; PhpStorm 2025.1 – 2025.3 is served by the 2025.3.x releases</li>
+            <li>Replaced an internal platform API used to read the plugin's own version, which is not permitted on newer PhpStorm builds. Supersedes 2026.2.1, which was never published</li>
             <li>Fixed compatibility declaration: 0.7.0 claimed support for PhpStorm 2025.3 but the MCP server could not start there — the toolbar showed the server as running while nothing was listening. This release requires 2026.1 or newer, which is what it is actually built against</li>
             <li>PhpStorm 2025.1 – 2025.3 users: install MCP Control 2025.3.1, which has the same tool features built against the 2025.3 platform</li>
             <li>No upper version limit any more: new PhpStorm releases are supported on day one instead of waiting for a compatibility republish. Verified by launching PhpStorm 2026.1 and 2026.2</li>

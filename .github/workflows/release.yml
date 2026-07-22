@@ -45,11 +45,14 @@ jobs:
       - name: Build and test
         run: ./gradlew build
 
-      # Checks our bytecode against the oldest IDE this branch claims (sinceBuild). On the 2025.x
-      # branch this caught a real NoSuchFieldError that was invisible at the previous floor. It does
-      # NOT prove the plugin starts -- only launching does (./gradlew runIde261/runIde262) -- so
-      # treat a green result as necessary, not sufficient. That distinction matters more here than
-      # on 2025.x, because this branch ships with an open ceiling.
+      # Checks our bytecode against every IDE in the declared range, which is the same gate
+      # Marketplace applies on upload. It catches API-policy problems that run fine but are not
+      # allowed -- 2026.2.1 was rejected for PluginManagerCore.getPlugin, which is legal on 2026.1
+      # and internal on 2026.2, while launching 2026.2 reported no issues at all.
+      #
+      # It does NOT prove the plugin starts: it never loads a class or exercises the bundled
+      # libraries, which is how 0.7.0 passed and then failed to bind. Launching (runIde261/262)
+      # covers that half. Neither check subsumes the other; a release needs both.
       - name: Verify plugin against the supported floor
         run: ./gradlew verifyPlugin
 

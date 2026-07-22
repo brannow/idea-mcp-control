@@ -1,6 +1,7 @@
 package com.github.brannow.phpstormmcp.toolwindow
 
 import com.github.brannow.phpstormmcp.McpServerStateListener
+import com.github.brannow.phpstormmcp.PLUGIN_VERSION
 import com.github.brannow.phpstormmcp.server.McpServerService
 import com.github.brannow.phpstormmcp.settings.McpSettings
 import com.github.brannow.phpstormmcp.settings.McpSettingsConfigurable
@@ -8,8 +9,6 @@ import com.github.brannow.phpstormmcp.statusbar.McpActivityLog
 import com.github.brannow.phpstormmcp.statusbar.McpIcons
 import com.github.brannow.phpstormmcp.statusbar.McpServerState
 import com.intellij.icons.AllIcons
-import com.intellij.ide.plugins.PluginManagerCore
-import com.intellij.openapi.extensions.PluginId
 import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.Disposable
@@ -104,11 +103,9 @@ class McpToolWindowPanel(
         updateLog()
     }
 
-    private fun pluginVersion(): String {
-        return PluginManagerCore.getPlugin(
-            PluginId.getId("com.github.brannow.phpstormmcp")
-        )?.version ?: "unknown"
-    }
+    // Baked in at build time -- every platform API for reading our own descriptor is internal on
+    // 2026.2 and gets the Marketplace upload rejected. See generatePluginVersion in build.gradle.kts.
+    private fun pluginVersion(): String = PLUGIN_VERSION
 
     private fun updateState() {
         val state = McpServerState.getInstance(project)

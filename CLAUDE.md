@@ -85,13 +85,27 @@ it a lie. Run the matching `runIde` task first.
 there is no going back to `0.x`. The git tag equals `pluginVersion` exactly; `release.yml` fails the
 build if they disagree.
 
-**The open ceiling is a promise with an obligation.** It is only defensible if something actually
-launches each new PhpStorm — `verifyPlugin` cannot see this class of break (see the note in
-`build.gradle.kts`). Run `./gradlew runIde261` / `runIde262` (and register the next major as it
-appears) before releasing. If a future release breaks the plugin, set `until-build` on the affected
-published version in the Marketplace UI; compatibility of an uploaded build is editable after the
-fact, which is what makes an open ceiling recoverable.
-- **Two release lines** — `main` serves 2026.1+; branch `maintenance/2025.3` serves 2025.3 (version 0.6.x, old runtime stack: Kotlin 2.1.10, MCP SDK 0.9.0, ktor 3.2.3, platform 2025.3). Backport tool features to the maintenance branch by cherry-picking; never merge `main` into it, or the runtime stack comes with it.
+**The open ceiling is a promise with an obligation, and it takes TWO checks — neither one covers
+the other.** When a new PhpStorm major appears, before releasing:
+
+1. `./gradlew runIde26N` — catches **runtime** breakage. The verifier never loads a class or
+   exercises the bundled ktor/coroutines/MCP-SDK stack, so it cannot see this. 0.7.0 passed
+   verification and then failed to bind its server on 253.
+2. `./gradlew verifyPlugin` — catches **API-policy** problems that run perfectly well. Widen the
+   `pluginVerification` range in `build.gradle.kts` to the new major first, or the check silently
+   skips it. 2026.2.1 launched cleanly on 2026.2 *and* was rejected by Marketplace at the same
+   moment, for `PluginManagerCore.getPlugin` — legal on 2026.1, internal on 2026.2. A floor-only
+   verification range could not have caught it; Marketplace verifies the whole declared range.
+
+Then register the next `runIde` task and bump the `pluginVerification` ceiling together — they are
+the same decision. If a future release does break the plugin, set `until-build` on the affected
+*published* version in the Marketplace UI; compatibility of an uploaded build is editable after the
+fact, which is what makes an open ceiling recoverable rather than a gamble.
+
+- **Two release lines** — `main` serves 2026.1+; branch `2025.x` serves 2025.1 – 2025.3 (version
+  2025.3.x, old runtime stack: Kotlin 2.1.10, MCP SDK 0.9.0, ktor 3.2.3, platform 2025.3). Backport
+  tool features to the legacy branch by cherry-picking; never merge `main` into it, or the runtime
+  stack comes with it.
   - **Why the split**: 0.7.0 declared `sinceBuild 253` but never started on build 253 — the ktor CIO server died before binding while the UI still flipped to "started". The cause is the bundled 2026.1-era runtime stack (ktor 3.5 / coroutines 1.11 / stdlib 2.3), not our own code: `git diff 0.6.0..0.7.0 -- src/.../server/` is empty. Building against an older platform would not help, because the bundled jars are the same either way — only reverting the dependency versions does, which is what the maintenance branch is.
   - **`verifyPlugin` cannot catch this.** It checks our bytecode against the platform API surface. It never loads a class, resolves `ServiceLoader`, or exercises bundled libraries — it reported 0.7.0 as "Compatible" with 253. The only real check is launching the target IDE (`runIde`).
 - **Plugin type**: MCP Server — the AI agent is the MCP client
