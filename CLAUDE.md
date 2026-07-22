@@ -60,19 +60,30 @@ the newer artifact, which is exactly the build that cannot start there.
 | Branch   | Version / tag | sinceBuild | untilBuild | Runtime stack                       |
 |----------|---------------|------------|------------|-------------------------------------|
 | `2025.x` | `2025.3.x`    | 251        | 253.\*     | ktor 3.2.3, MCP SDK 0.9, Kotlin 2.1 |
-| `main`   | `2026.1.x`    | 261        | **open**   | ktor 3.5, MCP SDK 0.13, Kotlin 2.3  |
+| `main`   | `2026.2.x`    | 261        | **open**   | ktor 3.5, MCP SDK 0.13, Kotlin 2.3  |
 
 **Why the split exists:** the 0.7.0 stack fails to start the embedded MCP server on build 253. The
 branch is not about IDE majors — it exists because a *runtime floor* broke. Rule: **branch only when
 the newest build can no longer run on an older IDE you still want to serve**, not once per IDE
 release. One artifact normally spans several majors.
 
-**Versioning:** the version tracks the PhpStorm line a branch serves, replacing semver. `main` uses
-the **floor** (`2026.1.x`) because its ceiling is open and would otherwise need renumbering as it
-widens; `2025.x` uses its ceiling (`2025.3.x`), which is safe only because that line is frozen.
-`2026.1.1 > 0.7.1` under JetBrains' comparator so users upgrade normally — and it is a one-way
-door, there is no going back to `0.x`. The git tag equals `pluginVersion` exactly; `release.yml`
-fails the build if they disagree.
+**Versioning — one rule, both branches: the version names the newest PhpStorm release the build has
+been launch-verified against.** `2025.3.1` was launched on 2025.3 (and 2025.1/2025.2); `2026.2.1` was
+launched on 2026.1 and 2026.2. This replaces semver, which said nothing useful — "0.6.1 vs 0.7.0"
+gave no hint which IDE a build was for while both carried identical tool code.
+
+Deliberately *not* the floor. The floor is already stated by `since-build`, and naming the version
+after it would make the number say nothing about what was tested. The cost is accepted knowingly:
+the prefix moves when a new major is verified (2026.2.1 → 2026.3.1) even without a code change, and
+the minimum required IDE is not visible in the number — `since-build` carries that. So the number
+answers "how current is this?", not "what do I need?".
+
+Because the version is a *verification* claim, bumping the prefix without launching that IDE makes
+it a lie. Run the matching `runIde` task first.
+
+`2026.2.1 > 0.7.1` under JetBrains' comparator so users upgrade normally — and it is a one-way door,
+there is no going back to `0.x`. The git tag equals `pluginVersion` exactly; `release.yml` fails the
+build if they disagree.
 
 **The open ceiling is a promise with an obligation.** It is only defensible if something actually
 launches each new PhpStorm — `verifyPlugin` cannot see this class of break (see the note in
