@@ -1,10 +1,12 @@
 name: Test
 
+# 2025.x is the legacy line (PhpStorm 2025.1 - 2025.3) and is released independently of main,
+# so it needs its own test runs -- a main-only trigger left it completely uncovered.
 on:
   push:
-    branches: [ main ]
+    branches: [ main, '2025.x' ]
   pull_request:
-    branches: [ main ]
+    branches: [ main, '2025.x' ]
 
 jobs:
   test:

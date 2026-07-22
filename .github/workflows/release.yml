@@ -1,5 +1,7 @@
 name: Release
 
+# Tags follow the PhpStorm line they serve: this branch tags 2025.3.x, main tags 2026.x.y.
+# The old 0.x tags still match the numeric pattern so historical tags keep working.
 on:
   push:
     tags:
@@ -24,19 +26,39 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
+      # The zip is built from gradle.properties, NOT from the tag. Without this check a tag that
+      # disagrees with pluginVersion silently produces a mislabeled artifact -- and now that the
+      # two branches use different version schemes (2025.3.x here, 2026.x.y on main), tagging the
+      # wrong branch is an easy mistake to make. Fail loudly instead.
+      - name: Check tag matches pluginVersion
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          TAG="${TAG#v}"
+          PROP="$(sed -n 's/^pluginVersion *= *//p' gradle.properties | tr -d '[:space:]')"
+          if [ "$TAG" != "$PROP" ]; then
+            echo "::error::Tag '$TAG' does not match pluginVersion '$PROP' in gradle.properties."
+            exit 1
+          fi
+          echo "version=$PROP" >> "$GITHUB_OUTPUT"
+        id: version
+
       - name: Build and test
         run: ./gradlew build
+
+      # Checks our bytecode against the oldest IDE this branch claims (sinceBuild). It caught a
+      # real NoSuchFieldError on 2025.1 that was invisible while the floor was 253. It does NOT
+      # prove the plugin starts -- only launching does (./gradlew runIde251/252/253) -- so treat
+      # a green result as necessary, not sufficient.
+      - name: Verify plugin against the supported floor
+        run: ./gradlew verifyPlugin
 
       - name: Build plugin zip
         run: ./gradlew buildPlugin
 
-      - name: Get version from tag
-        id: version
-        run: echo "version=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
-
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          name: ${{ steps.version.outputs.version }}
           files: build/distributions/*.zip
           generate_release_notes: true
           draft: false

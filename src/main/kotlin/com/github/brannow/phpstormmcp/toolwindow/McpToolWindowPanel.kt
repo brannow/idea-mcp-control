@@ -8,8 +8,7 @@ import com.github.brannow.phpstormmcp.statusbar.McpActivityLog
 import com.github.brannow.phpstormmcp.statusbar.McpIcons
 import com.github.brannow.phpstormmcp.statusbar.McpServerState
 import com.intellij.icons.AllIcons
-import com.intellij.ide.plugins.PluginManagerCore
-import com.intellij.openapi.extensions.PluginId
+import com.intellij.ide.plugins.PluginManager
 import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.Disposable
@@ -104,11 +103,13 @@ class McpToolWindowPanel(
         updateLog()
     }
 
-    private fun pluginVersion(): String {
-        return PluginManagerCore.getPlugin(
-            PluginId.getId("com.github.brannow.phpstormmcp")
-        )?.version ?: "unknown"
-    }
+    // Resolved via PluginManager.getPluginByClass rather than PluginId.getId: on 2025.3 PluginId
+    // is Kotlin and getId lives in a companion, so PluginId.getId compiles to a getstatic on
+    // PluginId.Companion, which does not exist on 2025.1 (Java class, static method) and throws
+    // NoSuchFieldError there. getPluginByClass is a plain static on both, and it also drops the
+    // hardcoded plugin id.
+    private fun pluginVersion(): String =
+        PluginManager.getPluginByClass(javaClass)?.version ?: "unknown"
 
     private fun updateState() {
         val state = McpServerState.getInstance(project)

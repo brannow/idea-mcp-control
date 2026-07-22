@@ -3,9 +3,10 @@
     <name>MCP Control</name>
     <vendor url="https://github.com/brannow/idea-mcp-control">Benjamin Rannow</vendor>
     <change-notes><![CDATA[
-        <b>0.6.1</b>
+        <b>2025.3.1</b>
         <ul>
-            <li>Maintenance release for PhpStorm 2025.3 — same tool features as 0.7.0, built against the 2025.3 platform. PhpStorm 2026.1 and newer should use 0.7.1+</li>
+            <li>Versions now track the PhpStorm line they serve. This release supports PhpStorm 2025.1 – 2025.3 and replaces 0.6.x; PhpStorm 2026.1 and newer is served by the 2026.x releases</li>
+            <li>Same tool features as 0.7.0, built against the 2025.3 platform and verified by launching 2025.1, 2025.2 and 2025.3</li>
             <li>The tool window no longer claims the server is running before it is: a start attempt now shows "Starting…", turns into "Running" only once the engine reports a bound port, and shows "Failed: &lt;reason&gt;" if it doesn't. Start/Stop follow that state instead of guessing from an internal object</li>
             <li>Start failures are no longer swallowed. The real exception is written to idea.log and shown in the notification, and a failure is only reported as a port conflict when it actually is one — previously every failure claimed "port already in use"</li>
             <li>Method breakpoints now supported: adding a breakpoint on a method/function definition line creates a real PHP method breakpoint on that line (same as PhpStorm's gutter "Method" option). Trait/interface/anonymous-class methods fall back to a line breakpoint on the first statement</li>
@@ -96,14 +97,14 @@
         They can't set breakpoints, step through code, or inspect variables.
         MCP Control exposes these IDE-only capabilities as MCP tools.</p>
 
-        <h3>14 tools across 4 categories</h3>
+        <h3>13 tools across 4 categories</h3>
 
         <b>Breakpoints</b> (work without an active debug session)
         <ul>
             <li>list, add, update, remove — with batch support (comma-separated)</li>
             <li>Exception breakpoints — pause on any PHP exception class</li>
+            <li>Method breakpoints — a breakpoint on a method/function definition line becomes a real method breakpoint</li>
             <li>Conditions, log expressions, suspend control</li>
-            <li>Method breakpoint detection — prevents wrong breakpoint type</li>
         </ul>
 
         <b>Session management</b>
@@ -121,9 +122,8 @@
 
         <b>Inspection</b> (requires paused session)
         <ul>
-            <li>Full debug snapshot (source + variables + stack trace)</li>
-            <li>Expand variables to any depth (circular references detected)</li>
-            <li>Switch stack frames and inspect variables at that scope</li>
+            <li>Full debug snapshot (source + variables + stack trace); inspect any stack frame's scope by index</li>
+            <li>Expand variables to any depth (circular references detected); page through large collections with offset/limit</li>
             <li>Evaluate PHP expressions with side effects ($bar = 'new value')</li>
             <li>Read console output (stdout/stderr) — works with Docker/remote processes</li>
         </ul>

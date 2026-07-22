@@ -312,11 +312,10 @@ class McpServerService(private val project: Project) : Disposable {
         return transport
     }
 
-    private fun pluginVersion(): String {
-        return com.intellij.ide.plugins.PluginManagerCore.getPlugin(
-            com.intellij.openapi.extensions.PluginId.getId("com.github.brannow.phpstormmcp")
-        )?.version ?: "unknown"
-    }
+    // See the note on McpToolWindowPanel.pluginVersion: PluginId.getId compiles to a getstatic on
+    // PluginId.Companion, which is absent on 2025.1 and throws NoSuchFieldError there.
+    private fun pluginVersion(): String =
+        com.intellij.ide.plugins.PluginManager.getPluginByClass(javaClass)?.version ?: "unknown"
 
     private fun createMcpServer(): Server {
         return Server(
