@@ -47,7 +47,10 @@ phpstorm-mcp/
 
 - **Language**: Kotlin (JetBrains recommendation, aligns with Kotlin MCP SDK)
 - **MCP SDK**: Kotlin SDK (`internal/reference-Repository/kotlin-sdk/`)
-- **Target IDE**: build against PhpStorm 2026.1.3 (build 261), compatible down to 2025.3 (`sinceBuild 253`, `untilBuild 261.*`). Kotlin API/language capped to 2.1 so we never call stdlib missing on the 253 floor. `verifyPlugin` checks binary compat against 2025.3. _(toolchain bump 2026-06: platform 2026.1.3, Kotlin 2.3.21, IntelliJ Gradle Plugin 2.16, Gradle 9.5.1, MCP SDK 0.13, ktor 3.5)_
+- **Target IDE**: build against PhpStorm 2026.1.3, supported range `sinceBuild 261` – `untilBuild 262.*`. _(toolchain: Kotlin 2.3.21, IntelliJ Gradle Plugin 2.16, Gradle 9.5.1, MCP SDK 0.13, ktor 3.5)_
+- **Two release lines** — `main` serves 2026.1+; branch `maintenance/2025.3` serves 2025.3 (version 0.6.x, old runtime stack: Kotlin 2.1.10, MCP SDK 0.9.0, ktor 3.2.3, platform 2025.3). Backport tool features to the maintenance branch by cherry-picking; never merge `main` into it, or the runtime stack comes with it.
+  - **Why the split**: 0.7.0 declared `sinceBuild 253` but never started on build 253 — the ktor CIO server died before binding while the UI still flipped to "started". The cause is the bundled 2026.1-era runtime stack (ktor 3.5 / coroutines 1.11 / stdlib 2.3), not our own code: `git diff 0.6.0..0.7.0 -- src/.../server/` is empty. Building against an older platform would not help, because the bundled jars are the same either way — only reverting the dependency versions does, which is what the maintenance branch is.
+  - **`verifyPlugin` cannot catch this.** It checks our bytecode against the platform API surface. It never loads a class, resolves `ServiceLoader`, or exercises bundled libraries — it reported 0.7.0 as "Compatible" with 253. The only real check is launching the target IDE (`runIde`).
 - **Plugin type**: MCP Server — the AI agent is the MCP client
 - **Debug sessions**: Human starts sessions, agent interacts with them
 

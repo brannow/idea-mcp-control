@@ -10,10 +10,10 @@ version = providers.gradleProperty("pluginVersion").get()
 
 kotlin {
     jvmToolchain(21)
-    // We build against the newest platform but keep compatibility down to 2025.3 (sinceBuild 253),
-    // whose bundled Kotlin is older. Cap the API/language version to 2.1 so we never call stdlib
-    // APIs that are missing at runtime on the oldest supported IDE. Raise this only if we also
-    // raise sinceBuild.
+    // Held at 2.1 from when 2025.3 was the floor. With sinceBuild now 261 (bundled Kotlin 2.3)
+    // this cap is no longer required, only conservative — nothing here needs a newer stdlib.
+    // Kept deliberately so a lower cap never becomes the thing that breaks a backport to the
+    // maintenance/2025.3 branch. Raise it only when there is an actual API you want.
     compilerOptions {
         apiVersion.set(org.jetbrains.kotlin.gradle.dsl.KotlinVersion.KOTLIN_2_1)
         languageVersion.set(org.jetbrains.kotlin.gradle.dsl.KotlinVersion.KOTLIN_2_1)
@@ -69,23 +69,29 @@ intellijPlatform {
         id = providers.gradleProperty("pluginGroup").get()
         name = providers.gradleProperty("pluginName").get()
         version = providers.gradleProperty("pluginVersion").get()
+        // 0.7.0 shipped with sinceBuild 253 and did not work there: the embedded MCP server
+        // never bound on build 253 because the bundled runtime stack (ktor 3.5, MCP SDK 0.13,
+        // kotlinx-coroutines 1.11, Kotlin stdlib 2.3) is a 2026.1 stack. verifyPlugin reported
+        // "Compatible" because it only checks OUR bytecode against the platform API — it never
+        // loads a class or exercises the bundled libraries, so this whole class of break is
+        // invisible to it. 261 is therefore the honest floor: it matches what we build against.
+        // 2025.3 users are served the 0.6.x maintenance line (branch maintenance/2025.3).
         ideaVersion {
-            sinceBuild = "253"
-            untilBuild = "261.*"
+            sinceBuild = "261"
+            untilBuild = "262.*"
         }
     }
 
-    // We build against the newest platform but support down to 2025.3. Verify binary compatibility
-    // against the floor so a 261-only platform API signature can't silently break 2025.3 at runtime.
+    // Verify against the floor we actually claim. Note the limitation above: a green result here
+    // says our platform API usage is fine, NOT that the plugin runs — only launching the IDE does.
     pluginVerification {
         ides {
-            // Plugin 2.16 replaced ide(type, version) with select { }. Pick PhpStorm release builds
-            // at the 253 floor so we validate binary compatibility against the oldest IDE we claim.
+            // Plugin 2.16 replaced ide(type, version) with select { }.
             select {
                 types = listOf(org.jetbrains.intellij.platform.gradle.IntelliJPlatformType.PhpStorm)
                 channels = listOf(org.jetbrains.intellij.platform.gradle.models.ProductRelease.Channel.RELEASE)
-                sinceBuild = "253"
-                untilBuild = "253.*"
+                sinceBuild = "261"
+                untilBuild = "261.*"
             }
         }
     }
