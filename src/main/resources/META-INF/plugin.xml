@@ -8,6 +8,8 @@
             <li>Fixed compatibility declaration: 0.7.0 claimed support for PhpStorm 2025.3 but the MCP server could not start there — the toolbar showed the server as running while nothing was listening. 0.7.1 requires PhpStorm 2026.1 or newer, which is what it is actually built against</li>
             <li>PhpStorm 2025.3 users: install MCP Control 0.6.1, which has the same tool features built against the 2025.3 platform</li>
             <li>Raised the supported ceiling to PhpStorm 2026.2</li>
+            <li>The tool window no longer claims the server is running before it is: a start attempt now shows "Starting…", turns into "Running" only once the engine reports a bound port, and shows "Failed: &lt;reason&gt;" if it doesn't. Start/Stop follow that state instead of guessing from an internal object</li>
+            <li>Start failures are no longer swallowed. The real exception is written to idea.log and shown in the notification, and a failure is only reported as a port conflict when it actually is one — previously every failure claimed "port already in use"</li>
         </ul>
         <b>0.7.0</b>
         <ul>
@@ -22,8 +24,7 @@
         </ul>
         <b>0.6.1</b>
         <ul>
-            <li>Toolchain upgrade: built against PhpStorm 2026.1.3 (still compatible with 2025.3 – 2026.1)</li>
-            <li>Updated dependencies: MCP Kotlin SDK 0.13, Ktor 3.5, Kotlin 2.3.21, IntelliJ Platform Gradle Plugin 2.16, Gradle 9.5.1</li>
+            <li>Maintenance release for PhpStorm 2025.3 — the 0.7.0 tool features built against the 2025.3 platform</li>
         </ul>
         <b>0.6.0</b>
         <ul>
