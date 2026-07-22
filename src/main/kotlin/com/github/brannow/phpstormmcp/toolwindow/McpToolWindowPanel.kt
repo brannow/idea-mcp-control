@@ -113,15 +113,26 @@ class McpToolWindowPanel(
     private fun updateState() {
         val state = McpServerState.getInstance(project)
         val version = "v${pluginVersion()}"
+        val port = state.transport.removePrefix("HTTP :")
         statusLabel.text = when (state.status) {
             McpServerState.Status.RUNNING ->
-                "\u25CF  Running on localhost:${state.transport.removePrefix("HTTP :")}  |  Clients: ${state.connectedClients}  |  $version"
+                "\u25CF  Running on localhost:$port  |  Clients: ${state.connectedClients}  |  $version"
+            McpServerState.Status.STARTING ->
+                "\u25CB  Starting on localhost:$port\u2026  |  $version"
+            McpServerState.Status.ERROR ->
+                "\u25CF  Failed: ${state.errorMessage}  |  $version"
             McpServerState.Status.STOPPED ->
                 "\u25CB  Stopped  |  $version"
         }
         statusLabel.foreground = when (state.status) {
             McpServerState.Status.RUNNING -> JBUI.CurrentTheme.Link.Foreground.ENABLED
-            McpServerState.Status.STOPPED -> UIUtil.getLabelDisabledForeground()
+            McpServerState.Status.ERROR -> JBUI.CurrentTheme.Label.errorForeground()
+            McpServerState.Status.STARTING, McpServerState.Status.STOPPED -> UIUtil.getLabelDisabledForeground()
+        }
+        statusLabel.toolTipText = if (state.status == McpServerState.Status.ERROR) {
+            "Full stack trace: Help > Show Log in Finder"
+        } else {
+            null
         }
 
         // Update tool window icon
@@ -151,8 +162,14 @@ private class StartAction(private val project: Project) :
         McpServerService.getInstance(project).start()
     }
 
+    // Enablement follows McpServerState, not `McpServerService.server != null`. The old check
+    // flipped the moment the server object was constructed, so a start that never bound left the
+    // start button greyed out and the stop button armed while the status line still said "Stopped".
     override fun update(e: AnActionEvent) {
-        e.presentation.isEnabled = !McpServerService.getInstance(project).isRunning
+        e.presentation.isEnabled = when (McpServerState.getInstance(project).status) {
+            McpServerState.Status.STOPPED, McpServerState.Status.ERROR -> true
+            McpServerState.Status.STARTING, McpServerState.Status.RUNNING -> false
+        }
     }
 
     override fun getActionUpdateThread() = ActionUpdateThread.EDT
@@ -166,7 +183,10 @@ private class StopAction(private val project: Project) :
     }
 
     override fun update(e: AnActionEvent) {
-        e.presentation.isEnabled = McpServerService.getInstance(project).isRunning
+        e.presentation.isEnabled = when (McpServerState.getInstance(project).status) {
+            McpServerState.Status.STARTING, McpServerState.Status.RUNNING -> true
+            McpServerState.Status.STOPPED, McpServerState.Status.ERROR -> false
+        }
     }
 
     override fun getActionUpdateThread() = ActionUpdateThread.EDT

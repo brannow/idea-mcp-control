@@ -6,6 +6,8 @@
         <b>0.6.1</b>
         <ul>
             <li>Maintenance release for PhpStorm 2025.3 — same tool features as 0.7.0, built against the 2025.3 platform. PhpStorm 2026.1 and newer should use 0.7.1+</li>
+            <li>The tool window no longer claims the server is running before it is: a start attempt now shows "Starting…", turns into "Running" only once the engine reports a bound port, and shows "Failed: &lt;reason&gt;" if it doesn't. Start/Stop follow that state instead of guessing from an internal object</li>
+            <li>Start failures are no longer swallowed. The real exception is written to idea.log and shown in the notification, and a failure is only reported as a port conflict when it actually is one — previously every failure claimed "port already in use"</li>
             <li>Method breakpoints now supported: adding a breakpoint on a method/function definition line creates a real PHP method breakpoint on that line (same as PhpStorm's gutter "Method" option). Trait/interface/anonymous-class methods fall back to a line breakpoint on the first statement</li>
             <li>Pagination: debug_evaluate and debug_variable_detail cap each node at 50 children and accept offset/limit to page through large arrays/collections; truncated nodes show a "... N more children" hint, so big evals no longer dump in full</li>
             <li>Frame-aware inspection: debug_evaluate, debug_variable_detail and debug_snapshot now follow the selected stack frame (or an explicit frame_index) instead of always reading the top frame</li>
