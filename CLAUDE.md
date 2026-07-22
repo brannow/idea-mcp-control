@@ -64,11 +64,20 @@ the newer artifact, which is exactly the build that cannot start there.
 | `2025.x`  | `2025.3.x`    | 251        | **253.\*** | ktor 3.2.3, MCP SDK 0.9, Kotlin 2.1 |
 | `main`    | 0.7.x (TBD)   | 261        | 2026.x     | ktor 3.5, MCP SDK 0.13, Kotlin 2.3  |
 
-**Versioning (decided for `2025.x`; main's exact scheme still open):** from `2025.3.1` onward this
-branch's version tracks the newest PhpStorm line it serves, replacing semver (0.6.x). Ceiling-based
-works here precisely because this line is frozen — its ceiling is pinned at 253 forever, so the
-prefix can never go stale. A living branch whose ceiling widens (main) would need floor-based
-numbering instead, or it would have to be renumbered mid-line.
+**Versioning — one rule, both branches: the version names the newest PhpStorm release the build has
+been launch-verified against.** `2025.3.1` was launched on 2025.1, 2025.2 and 2025.3, so it is
+named for 2025.3; `main` is `2026.2.x` because it was launched on 2026.1 and 2026.2. This replaces
+semver, which said nothing useful — "0.6.1 vs 0.7.0" gave no hint which IDE a build was for while
+both carried identical tool code.
+
+Deliberately *not* the floor. The floor is already stated by `since-build`; spending the version on
+it too would say nothing about what was tested. Accepted cost: the minimum required IDE is not
+visible in the number, and on a line with an open ceiling the prefix moves when a new major is
+verified, even with no code change. The number answers "how current is this?", not "what do I need?".
+
+Because the version is a *verification* claim, bumping the prefix without launching that IDE makes
+it a lie. Run the matching `runIde` task first. On this branch the prefix is effectively fixed at
+`2025.3` — the line is frozen at build 253, so there is no newer IDE it could ever be verified on.
 
 `2025.3.1 > 0.7.0` under JetBrains' comparator, so existing users upgrade normally — but it is a
 one-way door: you can never go back to `0.x`. The git tag equals `pluginVersion` exactly;

@@ -1,6 +1,7 @@
 name: Release
 
-# Tags follow the PhpStorm line they serve: this branch tags 2025.3.x, main tags 2026.x.y.
+# Tags name the newest PhpStorm release the build was verified on: this branch tags 2025.3.x,
+# main tags 2026.x.y.
 # The old 0.x tags still match the numeric pattern so historical tags keep working.
 on:
   push:
@@ -28,7 +29,7 @@ jobs:
 
       # The zip is built from gradle.properties, NOT from the tag. Without this check a tag that
       # disagrees with pluginVersion silently produces a mislabeled artifact -- and now that the
-      # two branches use different version schemes (2025.3.x here, 2026.x.y on main), tagging the
+      # two branches use different version prefixes (2025.3.x here, 2026.x.y on main), tagging the
       # wrong branch is an easy mistake to make. Fail loudly instead.
       - name: Check tag matches pluginVersion
         run: |
