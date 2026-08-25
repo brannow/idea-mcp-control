@@ -3,6 +3,13 @@
     <name>MCP Control</name>
     <vendor url="https://github.com/brannow/idea-mcp-control">Benjamin Rannow</vendor>
     <change-notes><![CDATA[
+        <b>2026.2.3</b>
+        <ul>
+            <li>Start failures now name the real cause. An occupied port was reported as "JobCancellationException: LazyStandaloneCoroutine is cancelling" — the debug server engine's internal cancellation wrapper — instead of the port conflict underneath it</li>
+            <li>A port conflict is reported as one in the tool window and activity log, not only in the notification balloon. The notification also warns that an agent connecting to that port reaches the PhpStorm instance already holding it, not this project</li>
+            <li>Start failures are now actually written to idea.log, stamped with the plugin version and IDE build, so the notification's "See Help &gt; Show Log" has something to show</li>
+            <li>Pressing Stop while the server is still starting no longer shows a spurious "Failed" state, and a start that completes after Stop no longer flips the tool window back to "Running"</li>
+        </ul>
         <b>2026.2.2</b>
         <ul>
             <li>Versions now name the newest PhpStorm release this build has been verified against — 2026.2. It requires PhpStorm 2026.1 or newer and replaces 0.7.x; PhpStorm 2025.1 – 2025.3 is served by the 2025.3.x releases</li>
