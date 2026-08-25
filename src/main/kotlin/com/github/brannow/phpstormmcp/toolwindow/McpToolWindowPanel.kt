@@ -19,6 +19,7 @@ import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.DefaultActionGroup
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.options.ShowSettingsUtil
+import com.intellij.openapi.util.text.StringUtil
 import com.intellij.openapi.project.DumbAware
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.wm.ToolWindow
@@ -36,6 +37,9 @@ import javax.swing.JPanel
 import javax.swing.ListSelectionModel
 
 private const val TOOL_WINDOW_ID = "MCP Control"
+
+/** Longest failure reason the single-row status label shows before it truncates. */
+private const val MAX_STATUS_REASON_CHARS = 70
 
 class McpToolWindowPanel(
     private val project: Project,
@@ -107,6 +111,17 @@ class McpToolWindowPanel(
     // 2026.2 and gets the Marketplace upload rejected. See generatePluginVersion in build.gradle.kts.
     private fun pluginVersion(): String = PLUGIN_VERSION
 
+    /**
+     * Failure reasons name the root cause plus the wrappers it came through, which is what makes a
+     * pasted report diagnosable — but this label sits in a single row next to the version, so the
+     * long form goes to the tooltip and the activity log, not here.
+     */
+    private fun abbreviate(text: String?): String {
+        val value = text.orEmpty()
+        return if (value.length <= MAX_STATUS_REASON_CHARS) value
+        else value.take(MAX_STATUS_REASON_CHARS - 1).trimEnd() + "\u2026"
+    }
+
     private fun updateState() {
         val state = McpServerState.getInstance(project)
         val version = "v${pluginVersion()}"
@@ -117,7 +132,7 @@ class McpToolWindowPanel(
             McpServerState.Status.STARTING ->
                 "\u25CB  Starting on localhost:$port\u2026  |  $version"
             McpServerState.Status.ERROR ->
-                "\u25CF  Failed: ${state.errorMessage}  |  $version"
+                "\u25CF  Failed: ${abbreviate(state.errorMessage)}  |  $version"
             McpServerState.Status.STOPPED ->
                 "\u25CB  Stopped  |  $version"
         }
@@ -127,7 +142,10 @@ class McpToolWindowPanel(
             McpServerState.Status.STARTING, McpServerState.Status.STOPPED -> UIUtil.getLabelDisabledForeground()
         }
         statusLabel.toolTipText = if (state.status == McpServerState.Status.ERROR) {
-            "Full stack trace: Help > Show Log in Finder"
+            // The label is abbreviated to keep the panel from stretching, so the tooltip has to
+            // carry the untruncated reason — it names the root cause and any wrappers around it.
+            val reason = StringUtil.escapeXmlEntities(state.errorMessage.orEmpty())
+            "<html>$reason<br/><br/>Full stack trace: Help &gt; Show Log in Finder</html>"
         } else {
             null
         }

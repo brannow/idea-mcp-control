@@ -12,6 +12,7 @@ import com.intellij.notification.NotificationType
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
+import com.intellij.openapi.application.ApplicationInfo
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.diagnostic.Logger
@@ -47,9 +48,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
-import java.net.BindException
 
 private const val MCP_SESSION_ID_HEADER = "mcp-session-id"
 
@@ -86,7 +87,6 @@ class McpServerService(private val project: Project) : Disposable {
      * returns, so carrying one here keeps us off that path entirely — no dependency change needed.
      */
     private val exceptionHandler = CoroutineExceptionHandler { _, throwable ->
-        logger.error("MCP server coroutine failed", throwable)
         ApplicationManager.getApplication().invokeLater { handleStartFailure(throwable) }
     }
 
@@ -173,23 +173,64 @@ class McpServerService(private val project: Project) : Disposable {
                 // Deliberately Throwable, not Exception: the failures seen in the field were
                 // LinkageError/NoClassDefFoundError from bundled-library mismatches, which a
                 // `catch (e: Exception)` lets straight through into the coroutine machinery.
+                //
+                // If *we* are the ones being cancelled (project closing -> dispose -> scope.cancel),
+                // the throwable is our own shutdown, not a start failure. Reporting it would leave
+                // a closing project with a bogus ERROR banner.
+                if (!isActive) return@launch
                 ApplicationManager.getApplication().invokeLater { handleStartFailure(throwable) }
                 return@launch
             }
 
             ApplicationManager.getApplication().invokeLater {
+                // Stop pressed while the engine was still binding: `stop()` already tore the
+                // engine down, so flipping to RUNNING here would put the toolbar back to the exact
+                // lie this state machine exists to prevent.
+                if (state.status != McpServerState.Status.STARTING) return@invokeLater
                 port = boundPort
                 state.start("HTTP :$boundPort")
             }
         }
     }
 
+    /**
+     * Write the failure to idea.log. The error notification tells the user to look there, so this
+     * is what makes that true — before this existed the start-failure path caught the throwable
+     * and reported it to the UI without ever logging it, which is why a field report of this bug
+     * arrived with a one-line message and nothing else.
+     *
+     * warn(), not error(): error() raises the IDE's "internal error" badge, which is a lie for an
+     * occupied port. The stack trace lands in the log either way, which is all we promise the user.
+     *
+     * Plugin version and IDE build go in the line so a pasted excerpt identifies itself — with an
+     * open until-build, "which IDE was this?" is the first question every report raises.
+     *
+     * [attemptedPort] is passed in rather than read from the field, which [handleStartFailure]
+     * zeroes during teardown — the port is the one detail this line exists to carry.
+     */
+    private fun logFailure(attemptedPort: Int, throwable: Throwable) {
+        logger.warn(
+            "MCP server failed on port $attemptedPort " +
+                "(plugin ${pluginVersion()}, IDE ${ApplicationInfo.getInstance().build.asString()})",
+            throwable
+        )
+    }
+
     /** Tear down a half-started server and surface the reason. Must run on the EDT. */
     private fun handleStartFailure(throwable: Throwable) {
         val state = McpServerState.getInstance(project)
-        if (state.status == McpServerState.Status.ERROR) return // already reported
+        // ERROR: already reported, and the first report carried the real cause.
+        // STOPPED: the user stopped it (or it never started) -- pressing Stop mid-bind cancels the
+        // engine, and that cancellation is the consequence of their action, not a failure. Logging
+        // it at warn() with a stack trace would put a scary trace in idea.log for a normal click.
+        // debug() keeps it reachable when someone is actually chasing something.
+        if (state.status == McpServerState.Status.ERROR || state.status == McpServerState.Status.STOPPED) {
+            logger.debug("MCP server failure ignored in state ${state.status}", throwable)
+            return
+        }
 
         val attemptedPort = port
+        logFailure(attemptedPort, throwable)
         transports.clear()
         try {
             server?.stop(0, 0)
@@ -199,23 +240,14 @@ class McpServerService(private val project: Project) : Disposable {
         server = null
         port = 0
 
-        state.failed(describe(throwable))
+        // The notification already special-cased a port conflict; the status line and activity log
+        // did not, so the one thing a reporter can copy out of the UI read
+        // "JobCancellationException: LazyStandaloneCoroutine is cancelling" for a busy port.
+        // Both surfaces now say the same thing.
+        val reason = if (isPortConflict(throwable)) "Port $attemptedPort is already in use"
+        else describeFailure(throwable)
+        state.failed(reason)
         notifyStartFailure(attemptedPort, throwable)
-    }
-
-    private fun describe(throwable: Throwable): String {
-        val message = throwable.message?.takeIf { it.isNotBlank() }
-        return if (message != null) "${throwable.javaClass.simpleName}: $message"
-        else throwable.javaClass.simpleName
-    }
-
-    private fun isPortConflict(throwable: Throwable): Boolean {
-        var cause: Throwable? = throwable
-        while (cause != null) {
-            if (cause is BindException) return true
-            cause = cause.cause
-        }
-        return false
     }
 
     fun stop() {
@@ -232,17 +264,19 @@ class McpServerService(private val project: Project) : Disposable {
     }
 
     /**
-     * 0.7.0 reported every start failure as "port already in use", which sent the one real report
-     * we got down a dead end — the port was fine, a bundled-library mismatch was killing the
-     * engine. Only claim a port conflict when a BindException actually says so; otherwise show the
-     * real exception and point at the log, where the handler above now writes the stack trace.
+     * Show the real exception (see [describeFailure] for why the raw one is usually a useless
+     * wrapper) and point at the log, where [logFailure] writes the stack trace.
      */
     private fun notifyStartFailure(port: Int, cause: Throwable) {
         val portConflict = isPortConflict(cause)
         val title = if (portConflict) "MCP Server: Port $port is already in use"
         else "MCP Server failed to start"
-        val body = if (portConflict) "Another PhpStorm instance or process may be using it."
-        else "${describe(cause)}<br/>See Help &gt; Show Log in Finder for the full stack trace."
+        // The field report this wording comes from: a second PhpStorm instance was already serving
+        // MCP on this port, and the agent connected to *that* one. The start failure is visible;
+        // the agent quietly driving the other project is not, so name it here.
+        val body = if (portConflict) "Another PhpStorm instance or process may be using it. " +
+            "An agent connecting to this port reaches that instance, not this project."
+        else "${describeFailure(cause)}<br/>See Help &gt; Show Log in Finder for the full stack trace."
 
         val notification = NotificationGroupManager.getInstance()
             .getNotificationGroup("MCP Control")
